@@ -14,6 +14,9 @@ Icon
 # Dataset
 Dataset
 
+# CSV data
+*.csv
+
 # Thumbnails
 ._*
 
