@@ -1,4 +1,5 @@
 # Imports
+import sys
 import cv2
 import torch
 import numpy as np
@@ -6,6 +7,11 @@ import pandas as pd
 from glob import glob
 import xml.etree.ElementTree as ET
 from torchvision import transforms
+
+np.set_printoptions(threshold=sys.maxsize)
+
+import matplotlib.pyplot as plt
+
 
 # PARAMETERS FOR NORMALIZATION
 STD_R = 0.229
@@ -15,12 +21,19 @@ MEAN_R = 0.485
 MEAN_G = 0.456
 MEAN_B = 0.406
 
-MASK_MAPPING = {
-        (0, 0, 0): 0,  # background
-        (128, 128, 0): 1,  # field
-        (0, 128, 0): 2,  # lines
-    }
+MASK_MAPPING_RGB = {
+    (0, 0, 0): (0,0,1),  # background
+    (128, 128, 0): (0,1,0),  # field
+    (0, 128, 0): (1,0,0),  # lines
+    #(128, 0, 0): 1,  # ball as a field
+}
 
+MASK_MAPPING_LABEL = {
+    (0,0,0): (0,0,1),  # background
+    (2,3,2): (0,1,0),  # field
+    (2,2,1): (1,0,0),  # lines
+    (0,1,1): (0,1,0),  # ball as a field
+}
 
 def read_image(path: str) -> np.array:
     """
@@ -66,11 +79,15 @@ def convert_image_to_label(image) -> np.array:
     
     :param image: RGB segmentation image
     :return: Pixel labeled image
-    """
-    out = (np.zeros(image.shape[:2]))
+    """        
+    out = (np.zeros(image.shape))
 
-    for k in MASK_MAPPING:
-        out[(image == k).all(axis=2)] = MASK_MAPPING[k]
+    if (128 in np.unique(image)):
+        for k in MASK_MAPPING_RGB:
+            out[(image == k).all(axis=-1)] = MASK_MAPPING_RGB[k]
+    else:
+        for k in MASK_MAPPING_LABEL:
+            out[(image == k).all(axis=-1)] = MASK_MAPPING_LABEL[k]
 
     return out
 
@@ -84,10 +101,10 @@ def convert_label_to_image(label) -> np.array:
     :return: RGB segmentation image
     """
     out = (np.zeros((label.shape[0], label.shape[1], 3)))
-    inverse_mask = {value: key for key, value in MASK_MAPPING.items()}
+    inverse_mask = {value: key for key, value in MASK_MAPPING_RGB.items()}
 
     for k in inverse_mask:
-        out[(label == k)] = inverse_mask[k]
+        out[(label == k).all(axis=-1)] = inverse_mask[k]
 
     return out
 
@@ -147,3 +164,58 @@ def xml_to_csv(xml_folder: str, output_file: str = 'labels.csv'):
     xml_df = pd.DataFrame(xml_list, columns=column_names)
 
     xml_df.to_csv(output_file, index=None)
+    
+
+def resize(batch):
+    """
+        TO BE FIXED
+    """
+    """
+    # Perform transformations
+    width = object_entries.iloc[0, 1]
+    height = object_entries.iloc[0, 2]
+
+    # Apply the transforms manually to be able to deal with
+    # transforms like Resize or RandomHorizontalFlip
+    updated_transforms = []
+    scale_factor = 1.0
+    random_flip = 0.0
+    for t in self.transform.transforms:
+        # Add each transformation to our list
+        updated_transforms.append(t)
+
+        # If a resize transformation exists, scale down the coordinates
+        # of the box by the same amount as the resize
+        if isinstance(t, transforms.Resize):
+            original_size = min(height, width)
+            scale_factor = original_size / t.size
+
+        # If a horizontal flip transformation exists, get its probability
+        # so we can apply it manually to both the image and the boxes.
+        elif isinstance(t, transforms.RandomHorizontalFlip):
+            random_flip = t.p
+
+    # Apply each transformation manually
+    for t in updated_transforms:
+        # Handle the horizontal flip case, where we need to apply
+        # the transformation to both the image and the box labels
+        if isinstance(t, transforms.RandomHorizontalFlip):
+            # If a randomly sampled number is less the the probability of
+            # the flip, then flip the image
+            if random.random() < random_flip:
+                image = transforms.RandomHorizontalFlip(1)(image)
+                for idx, box in enumerate(targets['boxes']):
+                    # Flip box's x-coordinates
+                    box[0] = width - box[0]
+                    box[2] = width - box[2]
+                    box[[0, 2]] = box[[2, 0]]
+                    targets['boxes'][idx] = box
+        else:
+            image = t(image)
+
+    # Scale down box if necessary
+    if scale_factor != 1.0:
+        for idx, box in enumerate(targets['boxes']):
+            box = (box / scale_factor).long()
+            targets['boxes'][idx] = box
+    """

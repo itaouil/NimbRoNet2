@@ -92,55 +92,6 @@ class MyDecDataset(Dataset):
 
         targets = {'boxes': boxes, 'labels': labels}
 
-        # Perform transformations
-        if self.transform:
-            width = object_entries.iloc[0, 1]
-            height = object_entries.iloc[0, 2]
-
-            # Apply the transforms manually to be able to deal with
-            # transforms like Resize or RandomHorizontalFlip
-            updated_transforms = []
-            scale_factor = 1.0
-            random_flip = 0.0
-            for t in self.transform.transforms:
-                # Add each transformation to our list
-                updated_transforms.append(t)
-
-                # If a resize transformation exists, scale down the coordinates
-                # of the box by the same amount as the resize
-                if isinstance(t, transforms.Resize):
-                    original_size = min(height, width)
-                    scale_factor = original_size / t.size
-
-                # If a horizontal flip transformation exists, get its probability
-                # so we can apply it manually to both the image and the boxes.
-                elif isinstance(t, transforms.RandomHorizontalFlip):
-                    random_flip = t.p
-
-            # Apply each transformation manually
-            for t in updated_transforms:
-                # Handle the horizontal flip case, where we need to apply
-                # the transformation to both the image and the box labels
-                if isinstance(t, transforms.RandomHorizontalFlip):
-                    # If a randomly sampled number is less the the probability of
-                    # the flip, then flip the image
-                    if random.random() < random_flip:
-                        image = transforms.RandomHorizontalFlip(1)(image)
-                        for idx, box in enumerate(targets['boxes']):
-                            # Flip box's x-coordinates
-                            box[0] = width - box[0]
-                            box[2] = width - box[2]
-                            box[[0, 2]] = box[[2, 0]]
-                            targets['boxes'][idx] = box
-                else:
-                    image = t(image)
-
-            # Scale down box if necessary
-            if scale_factor != 1.0:
-                for idx, box in enumerate(targets['boxes']):
-                    box = (box / scale_factor).long()
-                    targets['boxes'][idx] = box
-
         return image, targets
 
     
@@ -158,8 +109,12 @@ class MySegDataset(Dataset):
             and scaling are supported-)
         """
         
+        # Get files and sort lists
         self.img_paths = glob(base_dir + "/**/image/*.jpg", recursive=True)
         self.lbl_paths = glob(base_dir + "/**/target/*.png", recursive=True)
+        
+        self.img_paths.sort()
+        self.lbl_paths.sort()
                 
         assert len(self.img_paths) == len(self.lbl_paths)
 
@@ -184,10 +139,12 @@ class MySegDataset(Dataset):
 
         # Get image
         img_path = self.img_paths[idx]
+        print("Image path: ", img_path)
         image = read_image(str(img_path))
 
         # Get label
         label_path = self.lbl_paths[idx]
+        print("Label: ", label_path)
         label = read_image(str(label_path))
 
         # Perform transformations

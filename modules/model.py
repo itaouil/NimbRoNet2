@@ -61,7 +61,7 @@ class Decoder(torch.nn.Module):
 
         self.convD = torch.nn.Conv2d(256, 3, kernel_size=1, stride=1)
         self.convS = torch.nn.Conv2d(256, 3, kernel_size=1, stride=1)
-        self.bias = torch.nn.Parameter(torch.randn(3, 240, 320))
+        self.bias = torch.nn.Parameter(torch.randn(3, 120, 160))
 
     def forward(self, x4: torch.tensor, x3: torch.tensor, x2: torch.tensor, x1: torch.tensor, head: str) -> torch.tensor:
         """
