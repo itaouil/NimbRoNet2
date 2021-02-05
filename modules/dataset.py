@@ -1,3 +1,5 @@
+#TODO: Some images aren't the same size.
+
 # Imports
 import os
 import torch
@@ -11,6 +13,10 @@ from torchvision import transforms, utils
 from torch.utils.data import Dataset, DataLoader
 from utils import reverse_normalize, read_image, default_transforms, convert_image_to_label
 
+
+"""
+For Illyas: I made the default transformations mandatory to both the datasets.
+"""
 class MyDataLoader(torch.utils.data.DataLoader):
     def __init__(self, dataset: Dataset, **kwargs):
         """
@@ -31,7 +37,7 @@ class MyDataLoader(torch.utils.data.DataLoader):
 
 
 class MyDecDataset(Dataset):
-    def __init__(self, label_data: str, image_folder: str = '', transform: transforms = None):
+    def __init__(self, label_data: str, image_folder: str = ''):
         """
         Takes as input the path to a csv file and the path to the folder where the images are located
         
@@ -51,11 +57,8 @@ class MyDecDataset(Dataset):
         # convert csv file into a pandas dataframe
         self.labels_dataframe = pd.read_csv(label_data)
 
-        if transform is None:
-            self.transform = default_transforms()
-        else:
-            self.transform = transform
-
+        self.transform = default_transforms()
+        
     def __len__(self) -> int:
         """
         :return: the length of the dataset
@@ -91,7 +94,10 @@ class MyDecDataset(Dataset):
         boxes = torch.tensor(boxes).view(-1, 4)
 
         targets = {'boxes': boxes, 'labels': labels}
-
+        
+        # Perform transformations
+        image = self.transform(image)
+        
         return image, targets
 
     

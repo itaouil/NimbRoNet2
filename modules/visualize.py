@@ -6,6 +6,17 @@ from torchvision import transforms
 from utils import reverse_normalize, convert_label_to_image
 
 
+import matplotlib.pyplot as plt
+def show_tensor(image, title=None):
+    image = reverse_normalize(image)
+    image = image.numpy().transpose((1, 2, 0))
+    
+    plt.imshow(image)
+    if title is not None:
+        plt.title(title)
+    plt.pause(0.001)
+
+
 def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, labels: list = None):
     """
     Show the image along with the specified boxes around detected objects.

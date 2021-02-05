@@ -166,56 +166,20 @@ def xml_to_csv(xml_folder: str, output_file: str = 'labels.csv'):
     xml_df.to_csv(output_file, index=None)
     
 
-def resize(batch):
-    """
-        TO BE FIXED
-    """
-    """
-    # Perform transformations
-    width = object_entries.iloc[0, 1]
-    height = object_entries.iloc[0, 2]
+def resize_seg(images,labels,h=480,w=640):
+    t = transforms.Resize((h,w))
+    return t(images),t(labels)
+    
 
-    # Apply the transforms manually to be able to deal with
-    # transforms like Resize or RandomHorizontalFlip
-    updated_transforms = []
-    scale_factor = 1.0
-    random_flip = 0.0
-    for t in self.transform.transforms:
-        # Add each transformation to our list
-        updated_transforms.append(t)
-
-        # If a resize transformation exists, scale down the coordinates
-        # of the box by the same amount as the resize
-        if isinstance(t, transforms.Resize):
-            original_size = min(height, width)
-            scale_factor = original_size / t.size
-
-        # If a horizontal flip transformation exists, get its probability
-        # so we can apply it manually to both the image and the boxes.
-        elif isinstance(t, transforms.RandomHorizontalFlip):
-            random_flip = t.p
-
-    # Apply each transformation manually
-    for t in updated_transforms:
-        # Handle the horizontal flip case, where we need to apply
-        # the transformation to both the image and the box labels
-        if isinstance(t, transforms.RandomHorizontalFlip):
-            # If a randomly sampled number is less the the probability of
-            # the flip, then flip the image
-            if random.random() < random_flip:
-                image = transforms.RandomHorizontalFlip(1)(image)
-                for idx, box in enumerate(targets['boxes']):
-                    # Flip box's x-coordinates
-                    box[0] = width - box[0]
-                    box[2] = width - box[2]
-                    box[[0, 2]] = box[[2, 0]]
-                    targets['boxes'][idx] = box
-        else:
-            image = t(image)
-
-    # Scale down box if necessary
-    if scale_factor != 1.0:
-        for idx, box in enumerate(targets['boxes']):
+def resize_det(images,targets,h=480,w=640): # check which value is the default is for objects  # also try to test this method 
+    t = transforms.Resize((h,w))
+    
+    original_size = min(images[2], images[3])
+    scale_factor = original_size / transform.size
+    
+    for idx, box in enumerate(targets['boxes']):
             box = (box / scale_factor).long()
             targets['boxes'][idx] = box
-    """
+    
+    return t(images),targets
+    
