@@ -11,11 +11,11 @@ from glob import glob
 from pathlib import Path
 from torchvision import transforms, utils
 from torch.utils.data import Dataset, DataLoader
-from utils import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image
+from utils import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image,resize_seg
 
 
 """
-For Illyas: I made the default transformations mandatory to both the datasets, and I corrected the segmentation dataset to output the labels in the required format 
+For Illyas: I made the default transformations mandatory to both the datasets, and I corrected the segmentation dataset 
 """
 class MyDataLoader(torch.utils.data.DataLoader):
     def __init__(self, dataset: Dataset, **kwargs):
@@ -102,7 +102,7 @@ class MyDecDataset(Dataset):
 
     
 class MySegDataset(Dataset):
-    def __init__(self, base_dir: str, transform: transforms = None):
+    def __init__(self, base_dir: str, h=480,w=640):
         """
         Takes as input the path to the directory containing the images and labels
         and any transformations to be applied on the images .
@@ -124,10 +124,12 @@ class MySegDataset(Dataset):
                 
         assert len(self.img_paths) == len(self.lbl_paths)
 
-        if transform is None:
-            self.transform = default_transforms()
-        else:
-            self.transform = transform
+        
+        self.transform = default_transforms()
+        
+        self.h = h
+        self.w = w
+        
 
     def __len__(self) -> int:
         """
@@ -158,5 +160,9 @@ class MySegDataset(Dataset):
         
         # Perform transformations
         image = self.transform(image)
+        label = transforms.ToTensor()(label)
         
-        return image, transforms.ToTensor()(label)
+        image, label = resize_seg(image,label,self.h,self.w)
+        
+        
+        return image, label
