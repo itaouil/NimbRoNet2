@@ -22,17 +22,16 @@ MEAN_G = 0.456
 MEAN_B = 0.406
 
 MASK_MAPPING_RGB = {
-    (0, 0, 0): (0,0,1),  # background
-    (128, 128, 0): (0,1,0),  # field
-    (0, 128, 0): (1,0,0),  # lines
+    (0, 0, 0): 0,  # background
+    (128, 128, 0): 1,  # field
+    (0, 128, 0): 2,  # lines
     #(128, 0, 0): 1,  # ball as a field
 }
-
 MASK_MAPPING_LABEL = {
-    (0,0,0): (0,0,1),  # background
-    (2,3,2): (0,1,0),  # field
-    (2,2,1): (1,0,0),  # lines
-    (0,1,1): (0,1,0),  # ball as a field
+    (0,0,0): 0,  # background
+    (1,1,1): 1,  # field
+    (2,2,2): 2,  # lines
+    (3,3,3): 1,  # ball as a field
 }
 
 def read_image(path: str) -> np.array:
@@ -80,17 +79,17 @@ def convert_image_to_label(image) -> np.array:
     :param image: RGB segmentation image
     :return: Pixel labeled image
     """        
-    out = (np.zeros(image.shape))
-
+    
+    
+    out = (np.zeros(image.shape[:2]))
     if (128 in np.unique(image)):
         for k in MASK_MAPPING_RGB:
-            out[(image == k).all(axis=-1)] = MASK_MAPPING_RGB[k]
+            out[(image == k).all(axis=2)] = MASK_MAPPING_RGB[k]
     else:
         for k in MASK_MAPPING_LABEL:
-            out[(image == k).all(axis=-1)] = MASK_MAPPING_LABEL[k]
+            out[(image == k).all(axis=2)] = MASK_MAPPING_LABEL[k]
 
     return out
-
 
 def convert_label_to_image(label) -> np.array:
     """
@@ -104,7 +103,7 @@ def convert_label_to_image(label) -> np.array:
     inverse_mask = {value: key for key, value in MASK_MAPPING_RGB.items()}
 
     for k in inverse_mask:
-        out[(label == k).all(axis=-1)] = inverse_mask[k]
+        out[(label == k)] = inverse_mask[k]
 
     return out
 
