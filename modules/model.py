@@ -2,7 +2,7 @@ import torch
 import torchvision.models as models
 
 
-# For Illyas: I created a class for the location dependant convolution. For the issue that we we want to use the same model for different image sizes. So I thought I would just set the model to work with the max size, and then take the input size as a parameter in the forward method. Then depending on the image size we would take only the part of the bias parameters we need. (I will ask Hafez if this is the correct method to deal with it or not).
+# For Illyas: I created a class for the location dependant convolution. For the issue that we we want to use the same model for different image sizes. So I thought I would just set the model to work with the max size, and then take the input size as a parameter in the forward method. Then depending on the image size we would take only the part of the bias parameters we need. (I will ask Hafez if this is the correct method to deal with it or not). He Said we should resize it ? but I don't know how to do that 
 # I adjusted the model to use the new convolution layer
 class LocationAware1X1Conv2d(torch.nn.Conv2d):
     """
@@ -13,13 +13,13 @@ class LocationAware1X1Conv2d(torch.nn.Conv2d):
     """
     def __init__(self,w,h,in_channels, out_channels, bias=True):
         super().__init__(in_channels, out_channels, kernel_size =1, bias=bias)
-        self.locationBias=torch.nn.Parameter(torch.zeros(h,w,3))
+        self.locationBias=torch.nn.Parameter(torch.zeros(h,w,1))
     
     def forward(self,inputs,w,h):    
         b=self.locationBias
         convRes=super().forward(inputs)
         
-        return convRes+b[0:h,0:w,0]+b[0:h,0:w,1]+b[0:h,0:w,2]
+        return convRes+b[0:h,0:w,0]
 
     
 class Res18Encoder(torch.nn.Module):
@@ -82,7 +82,7 @@ class Decoder(torch.nn.Module):
         self.bn3 = torch.nn.BatchNorm2d(256)
         
         self.convD = LocationAware1X1Conv2d(w,h,256, 3)
-        self.convS = LocationAware1X1Conv2d(w,h,256, 3)
+        self.convS = LocationAware1X1Conv2d(w,h,256, 1)
         
         # share learnable bias between both heads by remove the locationBias from the segmentation head
         # and override it with the locationBias from the detection head
