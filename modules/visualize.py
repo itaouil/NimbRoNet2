@@ -1,3 +1,5 @@
+# What Changed fixed show_image_and_seg to work correctly with the new segmentation labels, and to work with the default dataloader
+
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -5,9 +7,9 @@ import matplotlib.patches as patches
 from torchvision import transforms
 from utils import reverse_normalize, convert_label_to_image
 
-
-import matplotlib.pyplot as plt
-def show_tensor(image, title=None):
+""" 
+To be deleted, but keep them here for now till we finish visualizing the show_labeled_images
+def show_tensor(image: torch.tensor, title=None):
     image = reverse_normalize(image)
     image = image.numpy().transpose((1, 2, 0))
     
@@ -17,6 +19,17 @@ def show_tensor(image, title=None):
     plt.pause(0.001)
 
 
+def show_segmentation(image, title=None):
+    #image = reverse_normalize(image)
+    image = image.numpy().transpose((1, 2, 0))
+    
+    print(image.shape)
+    image = convert_label_to_image(image[:,:,0]).astype(np.uint8)
+    plt.imshow(image)
+    if title is not None:
+        plt.title(title)
+    plt.pause(0.001)
+"""    
 def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, labels: list = None):
     """
     Show the image along with the specified boxes around detected objects.
@@ -64,19 +77,21 @@ def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, lab
 def show_image_and_seg(image: torch.tensor or np.array, labels: np.array):
     """
     Show the image along with its segmentation.
-    :param image: The image to plot. If the image is a torch.Tensor object,
+    :param image: The image to plot. Image should be torch.Tensor object,
          it will automatically be reverse-normalized
-        and converted to a PIL image for plotting.
-    :param labels: The segmentation of the image.
+        and converted to a numpy image for plotting.
+    :param labels: The segmentation of the image. This should also be a torch.Tensor
     """
     fig, ax = plt.subplots(1, 2)
 
-    # If the image is already a tensor, convert it back to a PILImage and reverse normalize it
     if isinstance(image, torch.Tensor):
         image = reverse_normalize(image)
-        image = transforms.ToPILImage()(image)
+        image = image.numpy().transpose((1, 2, 0))
+        
+    labels = labels.numpy().transpose((1, 2, 0))
+
 
     ax[0].imshow(image)
-    ax[1].imshow(convert_label_to_image(labels).astype(np.uint8))
+    ax[1].imshow(convert_label_to_image(labels[:,:,0]).astype(np.uint8))
 
     plt.show()
