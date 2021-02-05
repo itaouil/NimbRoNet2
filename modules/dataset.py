@@ -11,11 +11,11 @@ from glob import glob
 from pathlib import Path
 from torchvision import transforms, utils
 from torch.utils.data import Dataset, DataLoader
-from utils import reverse_normalize, read_image, default_transforms, convert_image_to_label
+from utils import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image
 
 
 """
-For Illyas: I made the default transformations mandatory to both the datasets.
+For Illyas: I made the default transformations mandatory to both the datasets, and I corrected the segmentation dataset to output the labels in the required format 
 """
 class MyDataLoader(torch.utils.data.DataLoader):
     def __init__(self, dataset: Dataset, **kwargs):
@@ -152,16 +152,11 @@ class MySegDataset(Dataset):
         label_path = self.lbl_paths[idx]
         print("Label: ", label_path)
         label = read_image(str(label_path))
+        
 
+        label = convert_image_to_label(label)
+        
         # Perform transformations
         image = self.transform(image)
-        label = self.transform(label)
-
-        # Undo normalization done to label
-        label = reverse_normalize(label)
-        label = np.array(transforms.ToPILImage()(label))
-
-        # Get the label for each pixel
-        label = convert_image_to_label(label)
-
-        return image, label
+        
+        return image, transforms.ToTensor()(label)
