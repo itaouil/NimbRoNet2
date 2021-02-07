@@ -204,12 +204,20 @@ class MySegDataset(Dataset):
         print("Label: ", label_path)
         label = read_image(str(label_path))
         
+        # resize images and labels
+        image = transforms.ToPILImage()(image)
+        label = transforms.ToPILImage()(label)
+        image, label = resize_seg(image,label,self.h,self.w)
+        image = np.array(image)
+        label = np.array(label)
+        
+        
         label = convert_image_to_label(label)
         
         # Perform transformations
         image = self.transform(image)
         label = transforms.ToTensor()(label)
         
-        image, label = resize_seg(image,label,self.h,self.w)
+        #image, label = resize_seg(image,label,self.h,self.w)
         
         return image, label
