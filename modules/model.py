@@ -1,7 +1,6 @@
 import torch
 import torchvision.models as models
 
-
 # For Illyas: I created a class for the location dependant convolution. For the issue that we we want to use the same model for different image sizes. So I thought I would just set the model to work with the max size, and then take the input size as a parameter in the forward method. Then depending on the image size we would take only the part of the bias parameters we need. (I will ask Hafez if this is the correct method to deal with it or not). He Said we should resize it ? but I don't know how to do that 
 # I adjusted the model to use the new convolution layer
 class LocationAware1X1Conv2d(torch.nn.Conv2d):

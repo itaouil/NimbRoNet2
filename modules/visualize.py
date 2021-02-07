@@ -3,9 +3,9 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from torchvision import transforms
-from utils import reverse_normalize, convert_label_to_image
+import matplotlib.patches as patches
+from helpers import reverse_normalize, convert_label_to_image
 
 """ 
 To be deleted, but keep them here for now till we finish visualizing the show_labeled_images
@@ -29,7 +29,7 @@ def show_segmentation(image, title=None):
     if title is not None:
         plt.title(title)
     plt.pause(0.001)
-"""    
+"""
 def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, labels: list = None):
     """
     Show the image along with the specified boxes around detected objects.
@@ -72,7 +72,27 @@ def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, lab
         ax.add_patch(rect)
 
     plt.show()
+    
+def show_image_and_probmap(image: torch.tensor or np.array, probmap: np.array):
+    """
+    Show the image along with its segmentation.
+    :param image: The image to plot. Image should be torch.Tensor object,
+         it will automatically be reverse-normalized
+        and converted to a numpy image for plotting.
+    :param labels: The segmentation of the image. This should also be a torch.Tensor
+    """
+    fig, ax = plt.subplots(1, 2)
 
+    if isinstance(image, torch.Tensor):
+        image = reverse_normalize(image)
+        image = image.numpy().transpose((1, 2, 0))
+        
+    probmap = probmap.numpy().transpose((1, 2, 0))
+
+    ax[0].imshow(image)
+    ax[1].imshow(probmap)
+
+    plt.show()
 
 def show_image_and_seg(image: torch.tensor or np.array, labels: np.array):
     """
