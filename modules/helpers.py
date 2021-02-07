@@ -164,7 +164,18 @@ def xml_to_csv(xml_folder: str, output_file: str = 'labels.csv'):
 
     xml_df.to_csv(output_file, index=None)
     
-
+def total_variation_loss(img:torch.tensor, channel:int)->int:
+    """
+    Calculate the total variational loss for an image across a single channel
+    :param img: input to calculate loss for
+    :param channel: channel to calculate loss on 
+    :return: loss value
+    """
+    bs_img, c_img, h_img, w_img = img.size()
+    tv_h = torch.pow(img[:,channel,1:,:]-img[:,channel,:-1,:], 2).sum()
+    tv_w = torch.pow(img[:,channel,:,1:]-img[:,channel,:,:-1], 2).sum()
+    return (tv_h+tv_w)/(bs_img*h_img*w_img)
+    
 def resize_seg(images,labels,h=480,w=640):
     t = transforms.Resize((h,w))
     return t(images),t(labels)
