@@ -12,13 +12,13 @@ class LocationAware1X1Conv2d(torch.nn.Conv2d):
     """
     def __init__(self,w,h,in_channels, out_channels, bias=True):
         super().__init__(in_channels, out_channels, kernel_size =1, bias=bias)
-        self.locationBias=torch.nn.Parameter(torch.zeros(h,w,1))
+        self.locationBias=torch.nn.Parameter(torch.zeros(h,w,3))
     
     def forward(self,inputs,w,h):    
         b=self.locationBias
         convRes=super().forward(inputs)
         
-        return convRes+b[0:h,0:w,0]
+        return convRes+b[0:h,0:w,0]+b[0:h,0:w,1]+b[0:h,0:w,2]
 
     
 class Res18Encoder(torch.nn.Module):
@@ -81,7 +81,7 @@ class Decoder(torch.nn.Module):
         self.bn3 = torch.nn.BatchNorm2d(256)
         
         self.convD = LocationAware1X1Conv2d(w,h,256, 3)
-        self.convS = LocationAware1X1Conv2d(w,h,256, 1)
+        self.convS = LocationAware1X1Conv2d(w,h,256, 3)
         
         # share learnable bias between both heads by remove the locationBias from the segmentation head
         # and override it with the locationBias from the detection head
