@@ -196,12 +196,12 @@ class MySegDataset(Dataset):
 
         # Get image
         img_path = self.img_paths[idx]
-        print("Image path: ", img_path)
+        #print("Image path: ", img_path)
         image = read_image(str(img_path))
 
         # Get label
         label_path = self.lbl_paths[idx]
-        print("Label: ", label_path)
+        #print("Label: ", label_path)
         label = read_image(str(label_path))
         
         # resize images and labels
