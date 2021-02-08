@@ -12,7 +12,7 @@ from pathlib import Path
 from torchvision import transforms, utils
 from scipy.stats import multivariate_normal
 from torch.utils.data import Dataset, DataLoader
-from helpers import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image,resize_seg
+from helpers import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image,resize_image
 
 
 """
@@ -61,7 +61,7 @@ class MyDecDataset(Dataset):
         self.labels_dataframe = pd.read_csv(label_data) # convert csv file into a pandas dataframe
 
     
-    def get_probmap(self, boxes: list, labels: list, size: tuple) -> np.array:
+    def get_probmap(self, boxes: list, labels: list, original_height: int, original_width: int) -> np.array:
         """
         Takes as input the boxes and labels
         for a given image and returns the
@@ -74,33 +74,41 @@ class MyDecDataset(Dataset):
         """
         
         # Probability map
-        probmap = np.zeros(size, dtype='float32')
+        probmap = np.zeros((self.height, self.width), dtype='float32')
         
         # Populate probability map
         for idx, coordinates in enumerate(boxes):
-            # Extract coordinates
-            xmin, xmax = coordinates[0], coordinates[2]
-            ymin, ymax = coordinates[1], coordinates[3]
+            # Extract coordinates (zero based)
+            xmin, xmax = coordinates[0]-1, coordinates[2]-1
+            ymin, ymax = coordinates[1]-1, coordinates[3]-1
+                        
+            # Convert coordinates from original
+            # resolution to new defined resolution
+            xmin = ((xmin * self.height) // original_height)
+            xmax = ((xmax * self.height) // original_height)
+            ymin = ((ymin * self.width) // original_width)
+            ymax = ((ymax * self.width) // original_width)
                         
             # Center and radius of the box
             radius = min((xmax-xmin)/2, (ymax-ymin)/2)
             center = np.array([ymin + (ymax-ymin)/2, xmin + (xmax-xmin)/2])
             
-            # Handle out of boundary idxs
-            ystop = min(math.ceil(ymax), probmap.shape[0])
-            xstop = min(math.ceil(xmax), probmap.shape[1])
-            
             # Increase radius (30%) if label is robot
             if labels[idx] == "robot":
                 radius += 0.3 * radius
             
+            #print(labels[idx], radius, center)
+            
             # Distribution
-            idxs = np.meshgrid(np.arange(ymin, ystop+1), np.arange(xmin, xstop+1))
+            idxs = np.meshgrid(np.arange(ymin, ymax+1), np.arange(xmin, xmax+1))
             idxs = np.array(idxs).T.reshape(-1,2)
             dist = multivariate_normal.pdf(idxs, center, [radius, radius])
             
             # Populate probability map
-            probmap[ymin:ystop+1, xmin:xstop+1] = dist.reshape((ystop-ymin)+1, (xstop-xmin)+1)
+            #print(xmin, xmax, ymin, ymax)
+            #print(dist.reshape((ymax-ymin)+1, (xmax-xmin)+1).shape)
+            #print(probmap[ymin:ymax+1, xmin:xmax+1].shape)
+            probmap[ymin:ymax+1, xmin:xmax+1] = dist.reshape((ymax-ymin)+1, (xmax-xmin)+1)
         
         return probmap * 100
         
@@ -123,9 +131,9 @@ class MyDecDataset(Dataset):
         
         img_path = os.path.join(self.root_dir, object_entries.iloc[0, 0])
         image = read_image(img_path)
-
-        boxes = []
-        labels = []
+        
+        # Fetch labels and respective boxes
+        boxes, labels = [], []
         for object_idx, row in object_entries.iterrows():
 
             # Read in xmin, ymin, xmax, and ymax
@@ -137,7 +145,7 @@ class MyDecDataset(Dataset):
             labels.append(label)
 
         # Get relative probability map
-        probmap = self.get_probmap(boxes, labels, (self.height,self.width))
+        probmap = self.get_probmap(boxes, labels, image.shape[0], image.shape[1])
             
         boxes = torch.tensor(boxes).view(-1, 4)
 
@@ -146,6 +154,9 @@ class MyDecDataset(Dataset):
         # Perform transformations
         image = self.transform(image)
         probmap = transforms.ToTensor()(probmap)
+        
+        # Resize image
+        resize_image(image,self.height,self.width)
         
         return image, probmap
 
@@ -164,21 +175,23 @@ class MySegDataset(Dataset):
             and scaling are supported-)
         """
         
-        # Get files and sort lists
+        # Get image and labels paths for segmentation data
         self.img_paths = glob(base_dir + "/**/image/*.jpg", recursive=True)
         self.lbl_paths = glob(base_dir + "/**/target/*.png", recursive=True)
         
+        # Sort lists to have a 1:1 mapping
         self.img_paths.sort()
         self.lbl_paths.sort()
                 
+        # Make sure we have the same size for both
         assert len(self.img_paths) == len(self.lbl_paths)
 
-        
+        # Defaults transformations
         self.transform = default_transforms()
         
+        # Orignal size
         self.h = h
         self.w = w
-        
 
     def __len__(self) -> int:
         """
@@ -195,29 +208,22 @@ class MySegDataset(Dataset):
             idx = idx.tolist()
 
         # Get image
-        img_path = self.img_paths[idx]
-        #print("Image path: ", img_path)
-        image = read_image(str(img_path))
+        image = read_image(str(self.img_paths[idx]))
 
         # Get label
-        label_path = self.lbl_paths[idx]
-        #print("Label: ", label_path)
-        label = read_image(str(label_path))
+        label = read_image(str(self.lbl_paths[idx]))
         
-        # resize images and labels
+        # Resize images and labels
         image = transforms.ToPILImage()(image)
         label = transforms.ToPILImage()(label)
-        image, label = resize_seg(image,label,self.h,self.w)
-        image = np.array(image)
-        label = np.array(label)
+        image = resize_image(image,self.h,self.w)
+        label = resize_image(label,self.h,self.w)
         
-        
+        # Convert image to one channel labels
         label = convert_image_to_label(label)
         
         # Perform transformations
         image = self.transform(image)
         label = transforms.ToTensor()(label)
-        
-        #image, label = resize_seg(image,label,self.h,self.w)
-        
+                
         return image, label

@@ -176,9 +176,9 @@ def total_variation_loss(img:torch.tensor, channel:int)->int:
     tv_w = torch.pow(img[:,channel,:,1:]-img[:,channel,:,:-1], 2).sum()
     return (tv_h+tv_w)/(bs_img*h_img*w_img)
     
-def resize_seg(images,labels,h=480,w=640):
+def resize_image(image,h=480,w=640):
     t = transforms.Resize((h,w))
-    return t(images),t(labels)
+    return np.array(t(image))
     
 
 def resize_det(images,targets,h=480,w=640): # check which value is the default is for objects  # also try to test this method 
