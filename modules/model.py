@@ -1,5 +1,6 @@
 import torch
 import torchvision.models as models
+from helpers import total_variation_loss,to_device
 
 # For Illyas: I created a class for the location dependant convolution. For the issue that we we want to use the same model for different image sizes. So I thought I would just set the model to work with the max size, and then take the input size as a parameter in the forward method. Then depending on the image size we would take only the part of the bias parameters we need. (I will ask Hafez if this is the correct method to deal with it or not). He Said we should resize it ? but I don't know how to do that 
 # I adjusted the model to use the new convolution layer
@@ -123,7 +124,7 @@ class Decoder(torch.nn.Module):
 
 
 class Model(torch.nn.Module):
-    def __init__(self,w:int, h:int):
+    def __init__(self,device,w:int, h:int):
         """
         Initialize the decoder used in model.
         Transpose-convolutional layers are used for up-sampling the representations
@@ -133,6 +134,7 @@ class Model(torch.nn.Module):
         super().__init__()
         self.encoder = Res18Encoder()
         self.decoder = Decoder(int(w/4), int(h/4))
+        self.device = device
 
     def forward(self, x: torch.tensor, head: str = "segmentation") -> torch.tensor:
         """
@@ -150,4 +152,60 @@ class Model(torch.nn.Module):
         x = self.decoder(w,h,x4, x3, x2, x1, head)
 
         return x
+    
+    def training_step_seg(self,batch):
+        # Unpack batch
+        images, targets = batch
+        
+        # Downsample targets using nearest neighbour method
+        downsampled_target =  torch.nn.UpsamplingNearest2d(scale_factor=0.25)(targets)
+        downsampled_target = torch.squeeze(downsampled_target,dim=1) #(batch_size,1,H,W) -> (batch_size,H,W)
+        downsampled_target = downsampled_target.type(torch.LongTensor) # convert the target from float to int
+        downsampled_target = to_device(downsampled_target,self.device)
+        
+        # Run forward pass
+        output = self.forward(images,head="segmentation")
+        
+        # Compute loss
+        nll_loss = torch.nn.NLLLoss()
+        softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
+        softmax_output = softmax(output)
+        total_loss = nll_loss(softmax_output, downsampled_target) + total_variation_loss(output,0)+ total_variation_loss(output,1) # also not sure if should be applied on output before or after softmax
+
+        return total_loss
+
+    def validation_seg(self,dataloader):
+        correct = 0
+        total = 0
+        for batch_idx,batch in enumerate(dataloader):
+            # Unpack batch
+            images, targets = batch
+            images = to_device(images,self.device)
+
+            # Downsample targets using nearest neighbour method
+            downsampled_target =  torch.nn.UpsamplingNearest2d(scale_factor=0.25)(targets)
+            downsampled_target = torch.squeeze(downsampled_target,dim=1) #(batch_size,1,H,W) -> (batch_size,H,W)
+            downsampled_target = downsampled_target.type(torch.LongTensor) # convert the target from float to int
+
+            # Run forward pass
+            output = self.forward(images,head="segmentation")
+            softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
+            softmax_output = softmax(output)
+            
+            # Get predictions from the maximum value
+            _, predicted = torch.max(softmax_output, 1)
+            
+            if self.device != 'cpu':
+                predicted = predicted.cpu()
+            
+            # Total correct predictions
+            correct += (predicted == downsampled_target).sum().item()
+                
+            # Total number of labels
+            total += (downsampled_target.size(0)*downsampled_target.size(1)*downsampled_target.size(2))
+           
+            
+        accuracy = 100 * (correct / total)
+             
+        return accuracy
 
