@@ -193,3 +193,13 @@ def resize_det(images,targets,h=480,w=640): # check which value is the default i
     
     return t(images),targets
     
+def to_device(data:torch.tensor, device:str):
+    """
+        Move tensor(s) to chosen device
+        :param data: input tensor
+        :param device: device to move tensor to
+        
+    """
+    if isinstance(data, (list,tuple)):
+        return [to_device(x, device) for x in data]
+    return data.to(device, non_blocking=True)
