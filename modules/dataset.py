@@ -59,7 +59,13 @@ class MyDecDataset(Dataset):
         self.root_dir = image_folder
         self.transform = default_transforms()
         self.labels_dataframe = pd.read_csv(label_data) # convert csv file into a pandas dataframe
-
+        
+        # Color mapping
+        self.label_map = {
+            "ball": 0,
+            "robot": 1,
+            "goalpost": 2
+        }
     
     def get_probmap(self, boxes: list, labels: list, original_height: int, original_width: int) -> np.array:
         """
@@ -74,7 +80,7 @@ class MyDecDataset(Dataset):
         """
         
         # Probability map
-        probmap = np.zeros((self.height, self.width), dtype='float32')
+        probmap = np.zeros((self.height, self.width, 3), dtype='float32')
         
         # Populate probability map
         for idx, coordinates in enumerate(boxes):
@@ -92,24 +98,19 @@ class MyDecDataset(Dataset):
             # Center and radius of the box
             radius = min((xmax-xmin)/2, (ymax-ymin)/2)
             center = np.array([ymin + (ymax-ymin)/2, xmin + (xmax-xmin)/2])
-            
+                        
             # Increase radius (30%) if label is robot
             if labels[idx] == "robot":
-                radius += 0.3 * radius
-            
-            #print(labels[idx], radius, center)
-            
+                radius += 0.6 * radius
+                        
             # Distribution
             idxs = np.meshgrid(np.arange(ymin, ymax+1), np.arange(xmin, xmax+1))
             idxs = np.array(idxs).T.reshape(-1,2)
             dist = multivariate_normal.pdf(idxs, center, [radius, radius])
             
             # Populate probability map
-            #print(xmin, xmax, ymin, ymax)
-            #print(dist.reshape((ymax-ymin)+1, (xmax-xmin)+1).shape)
-            #print(probmap[ymin:ymax+1, xmin:xmax+1].shape)
-            probmap[ymin:ymax+1, xmin:xmax+1] = dist.reshape((ymax-ymin)+1, (xmax-xmin)+1)
-        
+            probmap[ymin:ymax+1, xmin:xmax+1, self.label_map[labels[idx]]] = dist.reshape((ymax-ymin)+1, (xmax-xmin)+1)
+                  
         return probmap * 100
         
     def __len__(self) -> int:

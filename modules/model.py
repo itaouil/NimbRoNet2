@@ -124,7 +124,7 @@ class Decoder(torch.nn.Module):
 
 
 class Model(torch.nn.Module):
-    def __init__(self,device,w:int, h:int):
+    def __init__(self,device,w:int,h:int):
         """
         Initialize the decoder used in model.
         Transpose-convolutional layers are used for up-sampling the representations
@@ -152,6 +152,60 @@ class Model(torch.nn.Module):
         x = self.decoder(w,h,x4, x3, x2, x1, head)
 
         return x
+    
+    def training_step_detection(self,batch):
+        # Unpack batch
+        images, targets = batch
+        
+        # Downsample targets using nearest neighbour method
+        downsampled_target =  torch.nn.UpsamplingNearest2d(scale_factor=0.25)(targets)
+        downsampled_target = torch.squeeze(downsampled_target,dim=1) #(batch_size,1,H,W) -> (batch_size,H,W)
+        downsampled_target = downsampled_target.type(torch.LongTensor) # convert the target from float to int
+        downsampled_target = to_device(downsampled_target,self.device)
+        
+        # Run forward pass
+        output = self.forward(images, head="detection")
+        
+        # Compute loss
+        mse_loss = torch.nn.MSELoss()
+        total_loss = mse_loss(output, downsampled_target) + total_variation_loss(output,0)+ total_variation_loss(output,1) + total_variation_loss(output,2)
+        print("Detection total loss: ", total_loss)
+        return total_loss
+    
+    def validation_detection(self,dataloader):
+        correct = 0
+        total = 0
+        for batch_idx,batch in enumerate(dataloader):
+            # Unpack batch
+            images, targets = batch
+            images = to_device(images,self.device)
+
+            # Downsample targets using nearest neighbour method
+            downsampled_target =  torch.nn.UpsamplingNearest2d(scale_factor=0.25)(targets)
+            downsampled_target = torch.squeeze(downsampled_target,dim=1) #(batch_size,1,H,W) -> (batch_size,H,W)
+            downsampled_target = downsampled_target.type(torch.LongTensor) # convert the target from float to int
+
+            # Run forward pass
+            output = self.forward(images,head="detection")
+            softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
+            softmax_output = softmax(output)
+            
+            # Get predictions from the maximum value
+            _, predicted = torch.max(softmax_output, 1)
+            
+            if self.device != 'cpu':
+                predicted = predicted.cpu()
+            
+            # Total correct predictions
+            correct += (predicted == downsampled_target).sum().item()
+                
+            # Total number of labels
+            total += (downsampled_target.size(0)*downsampled_target.size(1)*downsampled_target.size(2))
+           
+            
+        accuracy = 100 * (correct / total)
+             
+        return accuracy
     
     def training_step_seg(self,batch):
         # Unpack batch

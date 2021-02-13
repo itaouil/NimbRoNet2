@@ -2,9 +2,11 @@
 import sys
 import cv2
 import torch
+import imutils
 import numpy as np
 import pandas as pd
 from glob import glob
+from scipy import ndimage
 import xml.etree.ElementTree as ET
 from torchvision import transforms
 
@@ -78,8 +80,7 @@ def convert_image_to_label(image) -> np.array:
     
     :param image: RGB segmentation image
     :return: Pixel labeled image
-    """        
-    
+    """
     
     out = (np.zeros(image.shape[:2]))
     if (128 in np.unique(image)):
@@ -91,6 +92,7 @@ def convert_image_to_label(image) -> np.array:
 
     return out
 
+
 def convert_label_to_image(label) -> np.array:
     """
     Converts the pixel labeled image back to its RGB equivalent according to the
@@ -99,6 +101,7 @@ def convert_label_to_image(label) -> np.array:
     :param label: Pixel labeled image
     :return: RGB segmentation image
     """
+    
     out = (np.zeros((label.shape[0], label.shape[1], 3)))
     inverse_mask = {value: key for key, value in MASK_MAPPING_RGB.items()}
 
@@ -203,3 +206,87 @@ def to_device(data:torch.tensor, device:str):
     if isinstance(data, (list,tuple)):
         return [to_device(x, device) for x in data]
     return data.to(device, non_blocking=True)
+
+def get_predicted_centers(target):
+    """
+    Returns predicted centers for the detections
+    :param probmap: the output probability map from the model
+    """
+    centers = {"ball": [], "robot": [], "goalpost": []}
+    
+    x_to_dict = {
+        0: "ball",
+        1: "robot",
+        2: "goalpost"
+    }
+
+    # Iterate over batch
+    for idx in range(len(target)):
+        current_map = target[idx].numpy()
+        
+        # Push empty list for current target
+        centers["ball"].append([])
+        centers["robot"].append([])
+        centers["goalpost"].append([])
+        
+        # Iterate over batch predictions
+        for x in range(3):
+            # Create binary map
+            binary_map = (current_map[x,:,:] > 0).astype(np.uint8)
+
+            # Compute contours
+            cnts = cv2.findContours(binary_map, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cnts = imutils.grab_contours(cnts)
+            
+            if len(cnts) > 0:
+                for c in cnts:
+                    # Compute the center of the contour
+                    M = cv2.moments(c)
+                    cX = int(M["m10"] / M["m00"])
+                    cY = int(M["m01"] / M["m00"])
+
+                    centers[x_to_dict[x]][idx].append((cY, cX))
+            else:
+                centers[x_to_dict[x]][idx].append((-1, -1))
+    
+    return centers
+
+def accuracy(predicted_map, target_map):
+    """
+    Computes accuracy between the predicted
+    map and the target map
+    
+    :param predicted_map: predicted gaussian map
+    :param target_map: target gaussian map
+    """
+
+    threshold = 5
+    correct, total = 0, 0
+    tp, tn, fp, fn = 0, 0, 0, 0
+    
+    target_centers = get_predicted_centers(target_map)
+    predicted_centers = get_predicted_centers(predicted_map)
+    
+    for key in predicted_centers.keys():
+        for batch in range(len(predicted_map)):
+            # Already seen points
+            seen = set()
+            
+            # Get centers for given batch and key
+            target = target_centers[key][batch]
+            predicted = predicted_centers[key][batch]
+            
+            print("Target: ", target)
+            print("Predicted: ", predicted)
+            
+            for center in predicted:
+                if min(target, key=lambda x: ((x[0]-center[0])**2 + (x[1]-center[1])**2)**0.5) < threshold:
+                    correct += 1
+                total += 1
+    
+    
+    
+            
+    
+    
+    

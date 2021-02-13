@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torchvision import transforms
 import matplotlib.patches as patches
-from helpers import reverse_normalize, convert_label_to_image
+from helpers import reverse_normalize,convert_label_to_image,get_predicted_centers
 
 """ 
 To be deleted, but keep them here for now till we finish visualizing the show_labeled_images
@@ -73,7 +73,7 @@ def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, lab
 
     plt.show()
     
-def show_image_and_probmap(image: torch.tensor or np.array, probmap: np.array):
+def show_image_and_probmap(image: torch.tensor or np.array, probmap: list):
     """
     Show the image along with its segmentation.
     :param image: The image to plot. Image should be torch.Tensor object,
@@ -86,11 +86,28 @@ def show_image_and_probmap(image: torch.tensor or np.array, probmap: np.array):
     if isinstance(image, torch.Tensor):
         image = reverse_normalize(image)
         image = image.numpy().transpose((1, 2, 0))
-        
-    probmap = probmap.numpy().transpose((1, 2, 0))
+    
+    target = np.ones(image.shape) * 255
 
+    # Get predicted centers
+    centers = get_predicted_centers(probmap)
+    new_centers = [centers["ball"][0], centers["robot"][0], centers["goalpost"][0]]
+    
+    # Color target based on predictions
+    for x in range(3):
+        for center in new_centers[x]:
+            x_range = np.arange(center[0]-15, center[0]+16)
+            y_range = np.arange(center[1]-15, center[1]+16)
+            
+            if x == 0:
+                target[center[0]-15:center[0]+5,center[1]-5:center[1]+15] = [255,255,0]
+            elif x == 1:
+                target[center[0]-15:center[0]+10,center[1]-10:center[1]+15] = [0,255,255]
+            else:
+                target[center[0]-15:center[0]+2,center[1]-2:center[1]+15] = [255,0,255]
+        
     ax[0].imshow(image)
-    ax[1].imshow(probmap)
+    ax[1].imshow(target)
 
     plt.show()
 
