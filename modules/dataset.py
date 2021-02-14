@@ -53,19 +53,14 @@ class MyDecDataset(Dataset):
             (all box coordinates are also automatically adjusted to match the modified image-only horizontal flip
             and scaling are supported-)
         """
+        
         # Class members
         self.width = w
         self.height = h
         self.root_dir = image_folder
         self.transform = default_transforms()
-        self.labels_dataframe = pd.read_csv(label_data) # convert csv file into a pandas dataframe
-        
-        # Color mapping
-        self.label_map = {
-            "ball": 0,
-            "robot": 1,
-            "goalpost": 2
-        }
+        self.labels_dataframe = pd.read_csv(label_data)
+        self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
     
     def get_probmap(self, boxes: list, labels: list, original_height: int, original_width: int) -> np.array:
         """
@@ -81,19 +76,22 @@ class MyDecDataset(Dataset):
         
         # Probability map
         probmap = np.zeros((self.height, self.width, 3), dtype='float32')
-        
+                
         # Populate probability map
         for idx, coordinates in enumerate(boxes):
-            # Extract coordinates (zero based)
             xmin, xmax = coordinates[0]-1, coordinates[2]-1
             ymin, ymax = coordinates[1]-1, coordinates[3]-1
-                        
+            
+            # Check if objects available
+            if xmin==xmax==ymin==ymax==-2:
+                break
+                                    
             # Convert coordinates from original
             # resolution to new defined resolution
-            xmin = ((xmin * self.height) // original_height)
-            xmax = ((xmax * self.height) // original_height)
-            ymin = ((ymin * self.width) // original_width)
-            ymax = ((ymax * self.width) // original_width)
+            xmin = ((xmin * self.width) // original_width)
+            xmax = ((xmax * self.width) // original_width)
+            ymin = ((ymin * self.height) // original_height)
+            ymax = ((ymax * self.height) // original_height)
                         
             # Center and radius of the box
             radius = min((xmax-xmin)/2, (ymax-ymin)/2)
@@ -127,37 +125,29 @@ class MyDecDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         
-        # Read in the image from the file name in the 0th column
+        # Read image
         object_entries = self.labels_dataframe.loc[self.labels_dataframe['image_id'] == idx]
+        image = read_image(os.path.join(self.root_dir, object_entries.iloc[0, 0]))
         
-        img_path = os.path.join(self.root_dir, object_entries.iloc[0, 0])
-        image = read_image(img_path)
-        
-        # Fetch labels and respective boxes
+        # Bounding boxes labels and positions
         boxes, labels = [], []
         for object_idx, row in object_entries.iterrows():
-
-            # Read in xmin, ymin, xmax, and ymax
-            box = self.labels_dataframe.iloc[object_idx, 4:8]
-            boxes.append(box)
-
-            # Read in the label
-            label = self.labels_dataframe.iloc[object_idx, 3]
-            labels.append(label)
+            boxes.append(self.labels_dataframe.iloc[object_idx, 4:8])
+            labels.append(self.labels_dataframe.iloc[object_idx, 3])
 
         # Get relative probability map
         probmap = self.get_probmap(boxes, labels, image.shape[0], image.shape[1])
             
-        boxes = torch.tensor(boxes).view(-1, 4)
-
-        targets = {'boxes': boxes, 'labels': labels}
+        # TO BE DELETED
+        #boxes = torch.tensor(boxes).view(-1, 4)
+        #targets = {'boxes': boxes, 'labels': labels}
         
         # Perform transformations
         image = self.transform(image)
         probmap = transforms.ToTensor()(probmap)
         
         # Resize image
-        resize_image(image,self.height,self.width)
+        image = resize_image(image,self.height,self.width)
         
         return image, probmap
 
@@ -166,7 +156,8 @@ class MySegDataset(Dataset):
     def __init__(self, base_dir: str, h=480,w=640):
         """
         Takes as input the path to the directory containing the images and labels
-        and any transformations to be applied on the images .
+        and any transformations to be applied on the images.
+        
         :param: base_dir:
             path to the folder containing the image folder which contains the images
             and target folder which contains the segmentation results.

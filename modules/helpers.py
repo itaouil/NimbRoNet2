@@ -124,50 +124,50 @@ def xml_to_csv(xml_folder: str, output_file: str = 'labels.csv'):
     """
 
     xml_list = []
-    image_id = 0
         
-    # Loop through every XML file
-    for xml_file in glob(xml_folder, recursive=True):
+    for image_id, xml_file in enumerate(glob(xml_folder, recursive=True)):
         tree = ET.parse(xml_file)
         root = tree.getroot()
-        
-        extension = None
-        
-        # Some annotations are different
-        # hence choose the root accordingly
+                
+        # Change root based on xml format
         if (root.tag == 'annotations'):
             root = root.find('image')
-            extension = root.find('filename').text[-4:]
-        else:
-            extension = root.find('path').text[-4:]
         
         filename = root.find('filename').text
+        
         size = root.find('size')
         width = int(size.find('width').text)
         height = int(size.find('height').text)
 
-        # Each object represents each actual image label
-        for member in root.findall('object'):
-            box = member.find('bndbox')
-            label = member.find('name').text
+        # Annotated objects tag
+        objects = root.findall('object')
+        
+        if not objects:
+            xml_list.append((xml_file[:-4]+".jpg", -1, -1, -1, -1, -1, -1, -1, image_id))
+        else:
+            for member in root.findall('object'):
+                box = member.find('bndbox')
+                label = member.find('name').text
 
-            # Add image file name, image size, label, and box coordinates to CSV file
-            row = (xml_file[:-4]+extension, width, height, label, int(float(box.find('xmin').text)),
-                   int(float(box.find('ymin').text)), int(float(box.find('xmax').text)),
-                   int(float(box.find('ymax').text)), image_id)
-            xml_list.append(row)
-
-        image_id += 1
+                xml_list.append((xml_file[:-4]+".jpg", 
+                                 width, 
+                                 height, 
+                                 label, 
+                                 int(box.find('xmin').text),
+                                 int(box.find('ymin').text), 
+                                 int(box.find('xmax').text),
+                                 int(box.find('ymax').text), 
+                                 image_id))
     
-    print("Processed " + str(image_id) + " images")
+    print("Processed: ", image_id, " images")
 
     # Save as a CSV file
     column_names = ['filename', 'width', 'height', 'class', 'xmin', 'ymin', 'xmax', 'ymax', 'image_id']
-    xml_df = pd.DataFrame(xml_list, columns=column_names)
+    xml_df = pd.DataFrame(xml_list, columns=column_names).to_csv(output_file, index=None)
 
-    xml_df.to_csv(output_file, index=None)
+    #xml_df.to_csv(output_file, index=None)
     
-def total_variation_loss(img:torch.tensor, channel:int)->int:
+def total_variation(img:torch.tensor, channel:int)->int:
     """
     Calculate the total variational loss for an image across a single channel
     :param img: input to calculate loss for
@@ -222,7 +222,7 @@ def get_predicted_centers(target):
 
     # Iterate over batch
     for idx in range(len(target)):
-        current_map = target[idx].numpy()
+        current_map = target[idx].detach().numpy()
         
         # Push empty list for current target
         centers["ball"].append([])
@@ -240,16 +240,21 @@ def get_predicted_centers(target):
             
             if len(cnts) > 0:
                 for c in cnts:
-                    # Compute the center of the contour
+                    # Compute moments and area of a contour
                     M = cv2.moments(c)
-                    cX = int(M["m10"] / M["m00"])
-                    cY = int(M["m01"] / M["m00"])
-
-                    centers[x_to_dict[x]][idx].append((cY, cX))
+                    area = cv2.contourArea(c)
+                    
+                    if M["m00"] > 0:
+                        cX = int(M["m10"] / M["m00"])
+                        cY = int(M["m01"] / M["m00"])
+                        centers[x_to_dict[x]][idx].append((cY, cX, area))
             else:
-                centers[x_to_dict[x]][idx].append((-1, -1))
+                centers[x_to_dict[x]][idx].append((-1, -1, 0))
     
     return centers
+
+def within_radius(target, prediction, radius):
+    return (abs(target[1]-prediction[1]) <= radius and abs(target[0]-prediction[0]) <= radius)
 
 def accuracy(predicted_map, target_map):
     """
@@ -260,29 +265,38 @@ def accuracy(predicted_map, target_map):
     :param target_map: target gaussian map
     """
 
-    threshold = 5
-    correct, total = 0, 0
-    tp, tn, fp, fn = 0, 0, 0, 0
+    min_radius = 5
+    min_area = min_radius**2    
+    correct, total, tp, tn, fp, fn = 0, 0, 0, 0, 0, 0
     
     target_centers = get_predicted_centers(target_map)
     predicted_centers = get_predicted_centers(predicted_map)
     
     for key in predicted_centers.keys():
         for batch in range(len(predicted_map)):
-            # Already seen points
-            seen = set()
-            
             # Get centers for given batch and key
-            target = target_centers[key][batch]
-            predicted = predicted_centers[key][batch]
+            targets = target_centers[key][batch]
+            predictions = predicted_centers[key][batch]
             
-            print("Target: ", target)
-            print("Predicted: ", predicted)
+            for (target, prediction) in zip(targets, predictions):
+                if (target[0]==-1 and target[1]==-1) and (prediction[2]<min_area or (prediction[0]==-1 and prediction[1]==-1)):
+                    tn += 1
+                elif (target[0]>=0 and target[1]>=0) and prediction[2]<min_area:
+                    fn += 1
+                elif (target[0]>=0 and target[1]>=0) and prediction[2]>=min_area and within_radius(target, prediction, min_radius):
+                    tp += 1
+                else:
+                    fp += 1
+    
+    print(tp, fp, tn, fn)
+    
+    return tp/(tp+fp), tp/(tp+fn)
+                
+                
             
-            for center in predicted:
-                if min(target, key=lambda x: ((x[0]-center[0])**2 + (x[1]-center[1])**2)**0.5) < threshold:
-                    correct += 1
-                total += 1
+                
+            
+            
     
     
     
