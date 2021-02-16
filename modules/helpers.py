@@ -5,6 +5,7 @@ import torch
 import imutils
 import numpy as np
 import pandas as pd
+from PIL import Image
 from glob import glob
 from scipy import ndimage
 import xml.etree.ElementTree as ET
@@ -180,12 +181,11 @@ def total_variation(img:torch.tensor, channel:int)->int:
     return (tv_h+tv_w)/(bs_img*h_img*w_img)
     
 def resize_image(image,h=480,w=640):
-    t = transforms.Resize((h,w))
+    t = transforms.Resize((h,w), interpolation=transforms.functional.InterpolationMode.NEAREST)
     return np.array(t(image))
-    
 
 def resize_det(images,targets,h=480,w=640): # check which value is the default is for objects  # also try to test this method 
-    t = transforms.Resize((h,w))
+    t = transforms.Resize((h,w), interpolation=transforms.functional.InterpolationMode.NEAREST)
     
     original_size = min(images[2], images[3])
     scale_factor = original_size / transform.size
@@ -287,8 +287,6 @@ def accuracy(predicted_map, target_map):
                     tp += 1
                 else:
                     fp += 1
-    
-    print(tp, fp, tn, fn)
     
     return tp/(tp+fp), tp/(tp+fn)
                 

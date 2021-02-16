@@ -18,7 +18,6 @@ class LocationAware1X1Conv2d(torch.nn.Conv2d):
     def forward(self,inputs,w,h):    
         b=self.locationBias
         convRes=super().forward(inputs)
-        
         return convRes+b[0:h,0:w,0]+b[0:h,0:w,1]+b[0:h,0:w,2]
 
     
@@ -29,16 +28,28 @@ class Res18Encoder(torch.nn.Module):
         but with the Global Average Pooling (GAP) and the fully connected layers removed.
         """
         super().__init__()
-        resnet18 = list(models.resnet18(pretrained=True).children())
+        self.resnet18 = models.resnet18(pretrained=True)
+        
+        resnet_children = list(self.resnet18.children())
 
-        self.conv1 = resnet18[0]
-        self.bn1 = resnet18[1]
-        self.relu = resnet18[2]
-        self.maxpool = resnet18[3]
-        self.layer1 = resnet18[4]
-        self.layer2 = resnet18[5]
-        self.layer3 = resnet18[6]
-        self.layer4 = resnet18[7]
+        self.conv1 = resnet_children[0]
+        self.bn1 = resnet_children[1]
+        self.relu = resnet_children[2]
+        self.maxpool = resnet_children[3]
+        self.layer1 = resnet_children[4]
+        self.layer2 = resnet_children[5]
+        self.layer3 = resnet_children[6]
+        self.layer4 = resnet_children[7]
+    
+    def freeze(self):
+        for child in self.resnet18.children():
+            for param in child.parameters():
+                param.requires_grad = False
+    
+    def unfreeze(self):
+        for child in self.resnet18.children():
+            for param in child.parameters():
+                param.requires_grad = True
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
@@ -135,6 +146,12 @@ class Model(torch.nn.Module):
         self.encoder = Res18Encoder()
         self.decoder = Decoder(int(w/4), int(h/4))
         self.device = device
+    
+    def freeze_encoder(self):
+        self.encoder.freeze()
+    
+    def unfreeze_encoder(self):
+        self.encoder.unfreeze()
 
     def forward(self, x: torch.tensor, head: str = "segmentation") -> torch.tensor:
         """

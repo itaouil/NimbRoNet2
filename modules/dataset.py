@@ -15,9 +15,6 @@ from torch.utils.data import Dataset, DataLoader
 from helpers import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image,resize_image
 
 
-"""
-For Illyas: I made the default transformations mandatory to both the datasets, and I corrected the segmentation dataset 
-"""
 class MyDataLoader(torch.utils.data.DataLoader):
     def __init__(self, dataset: Dataset, **kwargs):
         """
@@ -62,6 +59,10 @@ class MyDecDataset(Dataset):
         self.labels_dataframe = pd.read_csv(label_data)
         self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
     
+    def set_resolution(self, h:int, w:int):
+        self.width = w
+        self.height = h
+    
     def get_probmap(self, boxes: list, labels: list, original_height: int, original_width: int) -> np.array:
         """
         Takes as input the boxes and labels
@@ -94,7 +95,7 @@ class MyDecDataset(Dataset):
             ymax = ((ymax * self.height) // original_height)
                         
             # Center and radius of the box
-            radius = min((xmax-xmin)/2, (ymax-ymin)/2)
+            radius = max((xmax-xmin)/2, (ymax-ymin)/2)
             center = np.array([ymin + (ymax-ymin)/2, xmin + (xmax-xmin)/2])
                         
             # Increase radius (30%) if label is robot
@@ -142,12 +143,13 @@ class MyDecDataset(Dataset):
         #boxes = torch.tensor(boxes).view(-1, 4)
         #targets = {'boxes': boxes, 'labels': labels}
         
+        image = transforms.ToPILImage()(image)
+        
+        image = resize_image(image,self.height,self.width)
+        
         # Perform transformations
         image = self.transform(image)
-        probmap = transforms.ToTensor()(probmap)
-        
-        # Resize image
-        image = resize_image(image,self.height,self.width)
+        probmap = transforms.ToTensor()(probmap)        
         
         return image, probmap
 
@@ -184,6 +186,10 @@ class MySegDataset(Dataset):
         # Orignal size
         self.h = h
         self.w = w
+    
+    def set_resolution(self, h:int, w:int):
+        self.w = w
+        self.h = h
 
     def __len__(self) -> int:
         """
