@@ -188,6 +188,11 @@ class MySegDataset(Dataset):
         self.w = w
     
     def set_resolution(self, h:int, w:int):
+        """
+        Set the height and width for the images in the dataset
+        :param h: height of image
+               w:width of the image
+        """
         self.w = w
         self.h = h
 
@@ -197,7 +202,7 @@ class MySegDataset(Dataset):
         """
         return len(self.img_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx:int):
         """
         :param idx: index of image we want to get
         :return: tuple containing image and segmentation label
