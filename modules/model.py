@@ -1,5 +1,6 @@
 import torch
 import torchvision.models as models
+import numpy as np
 from helpers import total_variation,to_device,accuracy
 
 # For Illyas: I created a class for the location dependant convolution. For the issue that we we want to use the same model for different image sizes. So I thought I would just set the model to work with the max size, and then take the input size as a parameter in the forward method. Then depending on the image size we would take only the part of the bias parameters we need. (I will ask Hafez if this is the correct method to deal with it or not). He Said we should resize it ? but I don't know how to do that 
@@ -245,6 +246,25 @@ class Model(torch.nn.Module):
     def validation_segmentation(self,dataloader):
         correct = 0
         total = 0
+        correct_field = 0
+        total_field = 0
+        correct_lines = 0
+        total_lines = 0
+        correct_background = 0
+        total_background = 0
+        tp_field = 0
+        pred_field = 0
+        fp_field = 0
+        fn_field =0
+        tp_lines = 0
+        pred_lines = 0
+        fp_lines = 0
+        fn_lines =0
+        tp_background = 0
+        pred_background = 0
+        fp_background = 0
+        fn_background =0
+        
         for batch_idx,batch in enumerate(dataloader):
             # Unpack batch
             images, targets = batch
@@ -270,13 +290,55 @@ class Model(torch.nn.Module):
                 predicted = predicted.cpu()
             
             # Total correct predictions
-            correct += (predicted == downsampled_target).sum().item()
+            correct_predictions = (predicted == downsampled_target)
+            correct += correct_predictions.sum().item()
+            field_mask = downsampled_target.cpu()==1
+            correct_field += (np.logical_and(correct_predictions,field_mask)).sum().item()
+            lines_mask = downsampled_target.cpu()==2
+            correct_lines +=(np.logical_and(correct_predictions,lines_mask)).sum().item()
+            background_mask = downsampled_target.cpu()==0
+            correct_background +=(np.logical_and(correct_predictions,background_mask)).sum().item()
                 
             # Total number of labels
             total += (downsampled_target.size(0)*downsampled_target.size(1)*downsampled_target.size(2))
-           
+            total_field += field_mask.sum().item()
+            total_lines += lines_mask.sum().item()
+            total_background += background_mask.sum().item()
             
-        accuracy = 100 * (correct / total)
+            # Calculate IOU (Double Check)
+            # IOU true positive / (true positive + false positive + false negative)
+            tp_field += (np.logical_and(correct_predictions,field_mask)).sum().item()
+            pred_field = predicted.cpu() == 1
+            fp_field += (np.logical_and(pred_field ,np.logical_not(field_mask))).sum().item()
+            fn_field += (np.logical_and(np.logical_not(np.logical_and(correct_predictions,field_mask)),field_mask)).sum().item()
+            
+            
+            tp_lines += (np.logical_and(correct_predictions,lines_mask)).sum().item()
+            pred_lines = predicted.cpu() == 2
+            fp_lines += (np.logical_and(pred_lines ,np.logical_not(lines_mask))).sum().item()
+            fn_lines += (np.logical_and(np.logical_not(np.logical_and(correct_predictions,lines_mask)),lines_mask)).sum().item()
+            
+            tp_background += (np.logical_and(correct_predictions,background_mask)).sum().item()
+            pred_background = predicted.cpu() == 0
+            fp_background += (np.logical_and(pred_background ,np.logical_not(background_mask))).sum().item()
+            fn_background += (np.logical_and(np.logical_not(np.logical_and(correct_predictions,background_mask)),background_mask)).sum().item()
+            
+            #tn_field = (np.logical_and(np.logical_not(pred_field),np.logical_not(field_mask))).sum().item()# Just as a sanity check
+            #print(tn_field+fn_field+tp_field+fp_field)
+            #print(iou_field)
+    
+           
+        accuracy = {}    
+        accuracy['Total'] = 100 * (correct / total)
+        accuracy['Field'] = 100 * (correct_field / total_field)
+        accuracy['Lines'] = 100 * (correct_lines / total_lines)
+        accuracy['Background'] = 100 * (correct_background / total_background)
+        iou = {}
+        iou['Field'] = tp_field / (tp_field+fp_field+fn_field)
+        iou['Lines'] = tp_lines / (tp_lines+fp_lines+fn_lines)
+        iou['Background'] = tp_background / (tp_background+fp_background+fn_background)
+        iou['Total'] = (iou['Field'] + iou['Lines'] +iou['Background'])/3
+        
              
-        return accuracy
+        return accuracy,iou
 
