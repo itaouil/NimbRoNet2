@@ -5,6 +5,7 @@ import torch
 import imutils
 import numpy as np
 import pandas as pd
+import PIL
 from PIL import Image
 from glob import glob
 from scipy import ndimage
@@ -181,7 +182,8 @@ def total_variation(img:torch.tensor, channel:int)->int:
     return (tv_h+tv_w)/(bs_img*h_img*w_img)
     
 def resize_image(image,h=480,w=640):
-    t = transforms.Resize((h,w), interpolation=transforms.functional.InterpolationMode.NEAREST)
+    #t = transforms.Resize((h,w), interpolation=transforms.functional.InterpolationMode.NEAREST)
+    t = transforms.Resize((h,w), interpolation=PIL.Image.NEAREST)
     return np.array(t(image))
 
 def resize_det(images,targets,h=480,w=640): # check which value is the default is for objects  # also try to test this method 
@@ -293,7 +295,13 @@ def accuracy(predicted_map, target_map):
                 
             
                 
-            
+def to_device(data, device):
+    """
+        Move tensor(s) to chosen device
+    """
+    if isinstance(data, (list,tuple)):
+        return [to_device(x, device) for x in data]
+    return data.to(device, non_blocking=True)            
             
     
     
