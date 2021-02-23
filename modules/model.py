@@ -14,12 +14,21 @@ class LocationAware1X1Conv2d(torch.nn.Conv2d):
     """
     def __init__(self,w,h,in_channels, out_channels, bias=True):
         super().__init__(in_channels, out_channels, kernel_size =1, bias=bias)
-        self.locationBias=torch.nn.Parameter(torch.zeros(h,w,3))
+        self.locationBias=torch.nn.Parameter(torch.rand(h,w,3))
     
     def forward(self,inputs,w,h):    
         b=self.locationBias
+        if self.locationBias.shape != (h,w,3):
+            # upsample the previous locationBias so that it is the same size of the input.
+            b = torch.unsqueeze(b, 0)
+            b = torch.unsqueeze(b, 0) 
+            b = torch.nn.functional.interpolate(b,size=(h,w,3), mode='nearest')
+            b = torch.squeeze(b,0)
+            b = torch.squeeze(b,0)
+            self.locationBias = torch.nn.Parameter(b)
+        
         convRes=super().forward(inputs)
-        return convRes+b[0:h,0:w,0]+b[0:h,0:w,1]+b[0:h,0:w,2]
+        return convRes+b[:,:,0]+b[:,:,1]+b[:,:,2]
 
     
 class Res18Encoder(torch.nn.Module):
