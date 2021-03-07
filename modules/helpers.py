@@ -168,8 +168,9 @@ def xml_to_csv(xml_folder: str, output_file: str = 'labels.csv'):
     xml_df = pd.DataFrame(xml_list, columns=column_names).to_csv(output_file, index=None)
 
     #xml_df.to_csv(output_file, index=None)
-    
-def total_variation(img:torch.tensor, channel:int)->int:
+
+
+def total_variation_channel(img:torch.tensor, channel:int)->int:
     """
     Calculate the total variational loss for an image across a single channel
     :param img: input to calculate loss for
@@ -180,10 +181,24 @@ def total_variation(img:torch.tensor, channel:int)->int:
     tv_h = torch.pow(img[:,channel,1:,:]-img[:,channel,:-1,:], 2).sum()
     tv_w = torch.pow(img[:,channel,:,1:]-img[:,channel,:,:-1], 2).sum()
     return (tv_h+tv_w)/(bs_img*h_img*w_img)
+
+
+def total_variation(img:torch.tensor)->int:
+    """
+    Calculate the total variational loss.
+    
+    :param img: input to calculate loss for
+    :param channel: channel to calculate loss on 
+    :return: loss value
+    """
+    return (torch.sum(torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:])) + torch.sum(torch.abs(img[:, :, :-1, :] - img[:, :, 1:, :])))/img.shape[0]
+
+def mse_loss_fn(y, y_hat):
+    return ((y - y_hat)**2).sum()/y.shape[0]
     
 def resize_image(image,h=480,w=640):
-    #t = transforms.Resize((h,w), interpolation=transforms.functional.InterpolationMode.NEAREST)
-    t = transforms.Resize((h,w), interpolation=PIL.Image.NEAREST)
+    t = transforms.Resize((h,w), interpolation=transforms.functional.InterpolationMode.NEAREST)
+    #t = transforms.Resize((h,w), interpolation=PIL.Image.NEAREST)
     return np.array(t(image))
 
 def resize_det(images,targets,h=480,w=640): # check which value is the default is for objects  # also try to test this method 

@@ -1,34 +1,30 @@
 import torch
-import torchvision.models as models
 import numpy as np
-from helpers import total_variation,to_device,accuracy
+import torchvision.models as models
+from helpers import total_variation,to_device,accuracy,mse_loss_fn,total_variation_channel
 
-# For Illyas: I created a class for the location dependant convolution. For the issue that we we want to use the same model for different image sizes. So I thought I would just set the model to work with the max size, and then take the input size as a parameter in the forward method. Then depending on the image size we would take only the part of the bias parameters we need. (I will ask Hafez if this is the correct method to deal with it or not). He Said we should resize it ? but I don't know how to do that 
-# I adjusted the model to use the new convolution layer
+
 class LocationAware1X1Conv2d(torch.nn.Conv2d):
     """
     Location-Dependent convolutional layer in accordance to
     (Azizi, N., Farazi, H., & Behnke, S. (2018, October).
     Location dependency in video prediction. In International Conference on Artificial Neural Networks (pp. 630-638). Springer, Cham.)
-    
     """
     def __init__(self,w,h,in_channels, out_channels, bias=True):
         super().__init__(in_channels, out_channels, kernel_size =1, bias=bias)
-        self.locationBias=torch.nn.Parameter(torch.rand(h,w,3))
+        self.locationBias=torch.nn.Parameter(torch.rand((1, 3, h, w), requires_grad=True))
     
-    def forward(self,inputs,w,h):    
-        b=self.locationBias
-        if self.locationBias.shape != (h,w,3):
-            # upsample the previous locationBias so that it is the same size of the input.
-            b = torch.unsqueeze(b, 0)
-            b = torch.unsqueeze(b, 0) 
-            b = torch.nn.functional.interpolate(b,size=(h,w,3), mode='nearest')
-            b = torch.squeeze(b,0)
-            b = torch.squeeze(b,0)
-            self.locationBias = torch.nn.Parameter(b)
-        
+    def forward(self,inputs,w,h):
+        # Upsample location bias to match image size
+        if self.locationBias[0].shape != (3,h,w):
+            upsampled_bias = torch.nn.functional.interpolate(self.locationBias, size=((h,w)), mode='nearest')
+            self.locationBias = torch.nn.Parameter(upsampled_bias, requires_grad=True)
+
+        # Perform convolution
         convRes=super().forward(inputs)
-        return convRes+b[:,:,0]+b[:,:,1]+b[:,:,2]
+        
+        # Add location bias
+        return convRes + self.locationBias
 
     
 class Res18Encoder(torch.nn.Module):
@@ -72,6 +68,7 @@ class Res18Encoder(torch.nn.Module):
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
+        
         x1 = self.layer1(x)
         x2 = self.layer2(x1)
         x3 = self.layer3(x2)
@@ -84,22 +81,46 @@ class Decoder(torch.nn.Module):
     def __init__(self,w:int,h:int):
         """
         Initialize the decoder used in model.
+        
         Transpose convolutional layers are used for up-sampling,
         and location-dependent convolutional layers are used in the
         output heads with the learnable bias shared between them.
+        
+        Defined layers are in order of usage.
+        
         :param w: The max width of the output image 
         :param h: The max height of the output image
         """
         super().__init__()
+        
+        # ReLu
         self.relu = torch.nn.functional.relu
+        
+        # Transposed convolution 1
         self.convTrans1 = torch.nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2, padding=0)
+        
+        # Convolution 1
         self.conv1 = torch.nn.Conv2d(256, 256, kernel_size=1, stride=1)
+        
+        # Batch Norm 1
         self.bn1 = torch.nn.BatchNorm2d(512)
+        
+        # Transposed convolution 1
         self.convTrans2 = torch.nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2, padding=0)
+        
+        # Convolution 2
         self.conv2 = torch.nn.Conv2d(128, 256, kernel_size=1, stride=1)
+        
+        # Batch Norm 2
         self.bn2 = torch.nn.BatchNorm2d(512)
+        
+        # Transposed convolution 3
         self.convTrans3 = torch.nn.ConvTranspose2d(512, 128, kernel_size=2, stride=2, padding=0)
+        
+        # Convolution 3
         self.conv3 = torch.nn.Conv2d(64, 128, kernel_size=1, stride=1)
+        
+        # Batch Norm 3
         self.bn3 = torch.nn.BatchNorm2d(256)
         
         self.convD = LocationAware1X1Conv2d(w,h,256, 3)
@@ -109,6 +130,7 @@ class Decoder(torch.nn.Module):
         # and override it with the locationBias from the detection head
         del self.convS.locationBias
         self.convS.locationBias = self.convD.locationBias
+   
 
     def forward(self, w:int, h:int, x4: torch.tensor, x3: torch.tensor, x2: torch.tensor, x1: torch.tensor, head: str) -> torch.tensor:
         """
@@ -126,9 +148,11 @@ class Decoder(torch.nn.Module):
         x = self.relu(x4)
         x = self.convTrans1(x)
         x = torch.cat((x, self.conv1(x3)), 1)
+        
         x = self.bn1(self.relu(x))
         x = self.convTrans2(x)
         x = torch.cat((x, self.conv2(x2)), 1)
+        
         x = self.bn2(self.relu(x))
         x = self.convTrans3(x)
         x = torch.cat((x, self.conv3(x1)), 1)
@@ -153,9 +177,21 @@ class Model(torch.nn.Module):
         :param h: Height of input image
         """
         super().__init__()
-        self.encoder = Res18Encoder()
-        self.decoder = Decoder(int(w/4), int(h/4))
+        
+        # CPU or GPU
         self.device = device
+        
+        # Model encoder
+        self.encoder = Res18Encoder()
+        
+        # Weights for the MSE
+        # and total variation losses
+        self.mse_weight = 0.03
+        self.totvar_seg_weight = 0.00003
+        self.totvar_det_weight = 0.000002
+        
+        # Model decoder
+        self.decoder = Decoder(int(w/4), int(h/4))
     
     def freeze_encoder(self):
         self.encoder.freeze()
@@ -194,11 +230,11 @@ class Model(torch.nn.Module):
         # Run forward pass
         output = self.forward(images, head="detection")
         
-        # Compute loss
-        mse_loss = torch.nn.MSELoss()
-        total_loss = mse_loss(output, downsampled_target) + total_variation(output,0) + total_variation(output,1) + total_variation(output,2)
-        #print("Detection total loss: ", total_loss)
-        return total_loss
+        # Compute MSE and total variation losses
+        mse_loss = mse_loss_fn(output, downsampled_target) * self.mse_weight
+        ttvar_loss = total_variation(output) * self.totvar_det_weight
+        
+        return mse_loss + ttvar_loss
     
     def validation_detection(self,dataloader):
         avg_recall = 0
@@ -244,11 +280,13 @@ class Model(torch.nn.Module):
         # Run forward pass
         output = self.forward(images,head="segmentation")
         
-        # Compute loss
-        nll_loss = torch.nn.NLLLoss()
+        # Compute output
         softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
         softmax_output = softmax(output)
-        total_loss = nll_loss(softmax_output, downsampled_target) + total_variation(output,0)+ total_variation(output,1) # also not sure if should be applied on output before or after softmax
+
+        # Compute losse
+        nll_loss = torch.nn.NLLLoss()
+        total_loss = nll_loss(softmax_output, downsampled_target) + total_variation_channel(output,0) + total_variation_channel(output,1)
 
         return total_loss
 

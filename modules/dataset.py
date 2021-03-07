@@ -1,5 +1,3 @@
-#TODO: Some images aren't the same size.
-
 # Imports
 import os
 import math
@@ -9,29 +7,10 @@ import numpy as np
 import pandas as pd
 from glob import glob
 from pathlib import Path
-from torchvision import transforms, utils
+from torchvision import transforms,utils
 from scipy.stats import multivariate_normal
-from torch.utils.data import Dataset, DataLoader
-from helpers import reverse_normalize, read_image, default_transforms, convert_image_to_label,convert_label_to_image,resize_image
-
-
-class MyDataLoader(torch.utils.data.DataLoader):
-    def __init__(self, dataset: Dataset, **kwargs):
-        """
-        Accepts a Dataset object and creates an iterable over the data
-        
-        :param dataset: The dataset for iteration over.
-        :param kwargs: (Optional) Additional arguments to customize the
-            DataLoader, such as 'batch_size' or 'shuffle'.
-        """
-        super().__init__(dataset, collate_fn=MyDataLoader.collate_data, **kwargs)
-
-    # Converts a list of tuples into a tuple of lists so that
-    # it can properly be fed to the model for training
-    @staticmethod
-    def collate_data(batch):
-        images, targets = zip(*batch)
-        return list(images), list(targets)
+from torch.utils.data import Dataset,DataLoader
+from helpers import reverse_normalize,read_image,default_transforms,convert_image_to_label,convert_label_to_image,resize_image
 
 
 class MyDecDataset(Dataset):
@@ -51,12 +30,21 @@ class MyDecDataset(Dataset):
             and scaling are supported-)
         """
         
-        # Class members
+        # Width and height of the image
         self.width = w
         self.height = h
+        
+        # Root directory
         self.root_dir = image_folder
+        
+        # ImageNet based normalization
         self.transform = default_transforms()
+        
+        # Read CSV with info
         self.labels_dataframe = pd.read_csv(label_data)
+        
+        # Labels data
+        self.object_var = {'ball':80,'goalpost':80,'robot':120}
         self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
     
     def set_resolution(self, h:int, w:int):
@@ -85,7 +73,7 @@ class MyDecDataset(Dataset):
             
             # Check if objects available
             if xmin==xmax==ymin==ymax==-2:
-                break
+                continue
                                     
             # Convert coordinates from original
             # resolution to new defined resolution
@@ -94,23 +82,29 @@ class MyDecDataset(Dataset):
             ymin = ((ymin * self.height) // original_height)
             ymax = ((ymax * self.height) // original_height)
                         
-            # Center and radius of the box
-            radius = max((xmax-xmin)/2, (ymax-ymin)/2)
+            # Center of the object
             center = np.array([ymin + (ymax-ymin)/2, xmin + (xmax-xmin)/2])
-                        
-            # Increase radius (30%) if label is robot
-            if labels[idx] == "robot":
-                radius += 0.6 * radius
-                        
+            
+            # Variance of the object
+            variance = self.object_var[labels[idx]]
+
             # Distribution
             idxs = np.meshgrid(np.arange(ymin, ymax+1), np.arange(xmin, xmax+1))
             idxs = np.array(idxs).T.reshape(-1,2)
-            dist = multivariate_normal.pdf(idxs, center, [radius, radius])
+            dist = multivariate_normal.pdf(idxs, center, [variance, variance])
+            
+            # Add some additional variance to distribution
+            dist *= variance
             
             # Populate probability map
             probmap[ymin:ymax+1, xmin:xmax+1, self.label_map[labels[idx]]] = dist.reshape((ymax-ymin)+1, (xmax-xmin)+1)
+        
+        # Normalize probability map between 0 and 1
+        probmap[:,:,0] /= probmap[:,:,0].max() + 0.00000001
+        probmap[:,:,1] /= probmap[:,:,1].max() + 0.00000001
+        probmap[:,:,2] /= probmap[:,:,2].max() + 0.00000001
                   
-        return probmap * 100
+        return probmap
         
     def __len__(self) -> int:
         """
@@ -144,7 +138,6 @@ class MyDecDataset(Dataset):
         #targets = {'boxes': boxes, 'labels': labels}
         
         image = transforms.ToPILImage()(image)
-        
         image = resize_image(image,self.height,self.width)
         
         # Perform transformations
