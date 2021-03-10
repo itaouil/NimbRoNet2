@@ -169,8 +169,21 @@ def xml_to_csv(xml_folder: str, output_file: str = 'labels.csv'):
 
     #xml_df.to_csv(output_file, index=None)
 
-
+"""
 def total_variation_channel(img:torch.tensor, channel:int)->int:
+    ""
+    Calculate the total variational loss for an image across a single channel
+    :param img: input to calculate loss for
+    :param channel: channel to calculate loss on 
+    :return: loss value
+    ""
+    bs_img, c_img, h_img, w_img = img.size()
+    tv_h = torch.pow(img[:,channel,1:,:]-img[:,channel,:-1,:], 2).sum()
+    tv_w = torch.pow(img[:,channel,:,1:]-img[:,channel,:,:-1], 2).sum()
+    return (tv_h+tv_w)/(bs_img*h_img*w_img)
+"""
+    
+def total_variation(img:torch.tensor, channels:list)->int:
     """
     Calculate the total variational loss for an image across a single channel
     :param img: input to calculate loss for
@@ -178,20 +191,26 @@ def total_variation_channel(img:torch.tensor, channel:int)->int:
     :return: loss value
     """
     bs_img, c_img, h_img, w_img = img.size()
-    tv_h = torch.pow(img[:,channel,1:,:]-img[:,channel,:-1,:], 2).sum()
-    tv_w = torch.pow(img[:,channel,:,1:]-img[:,channel,:,:-1], 2).sum()
-    return (tv_h+tv_w)/(bs_img*h_img*w_img)
+    
+    tot_sum = 0
+    for channel in channels:
+        tv_h = torch.sum(torch.abs(img[:,channel,1:,:]-img[:,channel,:-1,:]))
+        tv_w = torch.sum(torch.abs(img[:,channel,:,1:]-img[:,channel,:,:-1]))
+        tot_sum += (tv_h + tv_w)
+        
+    return (tot_sum)/bs_img
 
-
+"""
 def total_variation(img:torch.tensor)->int:
-    """
+    ""
     Calculate the total variational loss.
     
     :param img: input to calculate loss for
     :param channel: channel to calculate loss on 
     :return: loss value
-    """
+    ""
     return (torch.sum(torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:])) + torch.sum(torch.abs(img[:, :, :-1, :] - img[:, :, 1:, :])))/img.shape[0]
+"""
 
 def mse_loss_fn(y, y_hat):
     return ((y - y_hat)**2).sum()/y.shape[0]
