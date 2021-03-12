@@ -13,7 +13,7 @@ from torch.utils.data import Dataset,DataLoader
 from helpers import reverse_normalize,read_image,default_transforms,convert_image_to_label,convert_label_to_image,resize_image
 
 
-class MyDecDataset(Dataset):
+class DetectionDataset(Dataset):
     def __init__(self, label_data: str, image_folder: str = '', h=480,w=640):
         """
         Takes as input the path to a csv file and the path to the folder where the images are located
@@ -44,10 +44,16 @@ class MyDecDataset(Dataset):
         self.labels_dataframe = pd.read_csv(label_data)
         
         # Labels data
-        self.object_var = {'ball':80,'goalpost':80,'robot':120}
         self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
+        self.label_variance = {'ball': 5, 'robot':10, 'goalpost': 5}
     
     def set_resolution(self, h:int, w:int):
+        """
+        Set new resolution for the dataset.
+
+        :param h: height of the image
+        :param w: width of the image
+        """
         self.width = w
         self.height = h
     
@@ -62,48 +68,50 @@ class MyDecDataset(Dataset):
         :param size: probability map size
         :return: torch tensor representing a 2D image
         """
+        # Probability map is 1/4 of resolution
+        width = self.width
+        height = self.height
         
         # Probability map
-        probmap = np.zeros((self.height, self.width, 3), dtype='float32')
+        probmap = np.zeros((height, width, 3), dtype='float32')
                 
         # Populate probability map
         for idx, coordinates in enumerate(boxes):
             xmin, xmax = coordinates[0]-1, coordinates[2]-1
             ymin, ymax = coordinates[1]-1, coordinates[3]-1
             
-            # Check if objects available
+            # Invalid object
             if xmin==xmax==ymin==ymax==-2:
                 continue
                                     
-            # Convert coordinates from original
-            # resolution to new defined resolution
-            xmin = ((xmin * self.width) // original_width)
-            xmax = ((xmax * self.width) // original_width)
-            ymin = ((ymin * self.height) // original_height)
-            ymax = ((ymax * self.height) // original_height)
+            # Transform coordinate to new resolution
+            xmin = ((xmin * width) // original_width)
+            xmax = ((xmax * width) // original_width)
+            ymin = ((ymin * height) // original_height)
+            ymax = ((ymax * height) // original_height)
                         
-            # Center of the object
-            center = np.array([ymin + (ymax-ymin)/2, xmin + (xmax-xmin)/2])
+            # Radius and center of the object
+            radius = max(int(ymax-ymin)/2, int((xmax-xmin)/2)) * self.label_variance[labels[idx]]
+            center = np.array([int(ymin + (ymax-ymin)/2), int(xmin + (xmax-xmin)/2)])            
             
-            # Variance of the object
-            variance = self.object_var[labels[idx]]
-
+            # Increase robot radius
+            if labels[idx] == "robot":
+                radius += int(0.1 * radius)
+                
             # Distribution
-            idxs = np.meshgrid(np.arange(ymin, ymax+1), np.arange(xmin, xmax+1))
+            idxs = np.meshgrid(np.arange(0, height), np.arange(0, width))
             idxs = np.array(idxs).T.reshape(-1,2)
-            dist = multivariate_normal.pdf(idxs, center, [variance, variance])
+            dist = multivariate_normal.pdf(idxs, center, [radius, radius])
             
-            # Add some additional variance to distribution
-            dist *= variance
+            # Normalize distribution values between 0 and 1
+            dist = (dist - dist.min()) / (dist.max() - dist.min())
             
             # Populate probability map
-            probmap[ymin:ymax+1, xmin:xmax+1, self.label_map[labels[idx]]] = dist.reshape((ymax-ymin)+1, (xmax-xmin)+1)
+            probmap[:, :, self.label_map[labels[idx]]] += dist.reshape(height, width)
         
-        # Normalize probability map between 0 and 1
-        probmap[:,:,0] /= probmap[:,:,0].max() + 0.00000001
-        probmap[:,:,1] /= probmap[:,:,1].max() + 0.00000001
-        probmap[:,:,2] /= probmap[:,:,2].max() + 0.00000001
-                  
+        # Cap values above one to 1
+        probmap = np.where(probmap > 1, 1, probmap)
+        
         return probmap
         
     def __len__(self) -> int:
@@ -133,21 +141,18 @@ class MyDecDataset(Dataset):
         # Get relative probability map
         probmap = self.get_probmap(boxes, labels, image.shape[0], image.shape[1])
             
-        # TO BE DELETED
-        #boxes = torch.tensor(boxes).view(-1, 4)
-        #targets = {'boxes': boxes, 'labels': labels}
-        
+        # Resize image to target resolution
         image = transforms.ToPILImage()(image)
         image = resize_image(image,self.height,self.width)
         
-        # Perform transformations
+        # Normalize image and target to tensor
         image = self.transform(image)
         probmap = transforms.ToTensor()(probmap)        
         
         return image, probmap
 
     
-class MySegDataset(Dataset):
+class SegmentationDataset(Dataset):
     def __init__(self, base_dir: str, h=480,w=640):
         """
         Takes as input the path to the directory containing the images and labels
@@ -184,7 +189,7 @@ class MySegDataset(Dataset):
         """
         Set the height and width for the images in the dataset
         :param h: height of image
-               w:width of the image
+        :param w: width of the image
         """
         self.w = w
         self.h = h

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torchvision.models as models
-from helpers import total_variation,to_device,accuracy,mse_loss_fn
+from helpers import total_variation, to_device, downsample
 
 
 class LocationAware1X1Conv2d(torch.nn.Conv2d):
@@ -34,10 +34,14 @@ class Res18Encoder(torch.nn.Module):
         but with the Global Average Pooling (GAP) and the fully connected layers removed.
         """
         super().__init__()
+        
+        # Load pretrained ResNet18
         self.resnet18 = models.resnet18(pretrained=True)
         
+        # Get ResNet components
         resnet_children = list(self.resnet18.children())
 
+        # Create encoder hierarchy
         self.conv1 = resnet_children[0]
         self.bn1 = resnet_children[1]
         self.relu = resnet_children[2]
@@ -48,11 +52,19 @@ class Res18Encoder(torch.nn.Module):
         self.layer4 = resnet_children[7]
     
     def freeze(self):
+        """
+        Freeze encoder components such
+        that no backprop is applied to them
+        """
         for child in self.resnet18.children():
             for param in child.parameters():
                 param.requires_grad = False
     
     def unfreeze(self):
+        """
+        Unfreeze encoder components in
+        order to apply backprop and finetune
+        """
         for child in self.resnet18.children():
             for param in child.parameters():
                 param.requires_grad = True
@@ -61,6 +73,7 @@ class Res18Encoder(torch.nn.Module):
         """
         Definition of the forward function of the model (called when a parameter is passed
         as through ex: model(x))
+        
         :param x: Input Image
         :return: Four outputs of the model at different stages
         """
@@ -184,34 +197,45 @@ class Model(torch.nn.Module):
         # Model encoder
         self.encoder = Res18Encoder()
         
-        # Weights for the MSE
-        # and total variation losses
-        self.mse_weight = 0.03
-        self.totvar_seg_weight = 0.00003
-        self.totvar_det_weight = 0.000002
-        
         # Model decoder
         self.decoder = Decoder(int(w/4), int(h/4))
+        
+        # Detection loss
+        self.mse_loss = torch.nn.MSELoss()
+        
+        # Segmentation loss
+        self.nll_loss = torch.nn.NLLLoss()
     
     def freeze_encoder(self):
+        """
+        Freeze encoder weights
+        """
         self.encoder.freeze()
     
     def unfreeze_encoder(self):
+        """
+        Unfreeze encoder weights
+        """
         self.encoder.unfreeze()
 
     def forward(self, x: torch.tensor, head: str = "segmentation") -> torch.tensor:
         """
         Definition of the forward function of the model (called when a parameter is passed
         as through ex: model(x))
+        
         :param head:
         :param x: Four Inputs from the Decoder model
         :param head: Determines which head will output the results
         :return: Either detection or segmentation result
         """
+        # Ouput resolution
         w = int(x.shape[3]/4)
         h = int(x.shape[2]/4)
+        
+        # Encoder feature maps
         x1, x2, x3, x4 = self.encoder(x)
         
+        # Decoder output
         x = self.decoder(w,h,x4, x3, x2, x1, head)
 
         return x
@@ -220,59 +244,27 @@ class Model(torch.nn.Module):
         # Unpack batch
         images, targets = batch
         
-        # Downsample targets using nearest neighbour method
-        downsampled_target =  torch.nn.functional.interpolate(targets, 
-                                                              scale_factor=0.25, 
-                                                              mode="nearest", 
-                                                              recompute_scale_factor=False)
+        # Downsample targets to 0.25 * dimension
+        downsampled_target = downsample(targets)
         downsampled_target = to_device(downsampled_target,self.device)
-                
+                        
         # Run forward pass
         output = self.forward(images, head="detection")
         
         # Compute MSE and total variation losses
-        mse_loss = mse_loss_fn(output, downsampled_target)
-        ttvar_loss = total_variation(output, [0,1,2])
+        mse_loss = self.mse_loss(output, downsampled_target)
+        #ttvar_loss = total_variation(output, 0.0001, [0,1,2])
         
-        return (mse_loss + ttvar_loss)
+        return mse_loss
     
     def validation_detection(self,dataloader):
-        avg_recall = 0
-        avg_precision = 0
-        
-        for batch_idx,batch in enumerate(dataloader):
-            # Unpack batch
-            images, targets = batch
-            images = to_device(images,self.device)
-
-            # Downsample targets using nearest neighbour method
-            downsampled_target = torch.nn.functional.interpolate(targets,
-                                                                 scale_factor=0.25,
-                                                                 mode="nearest",
-                                                                 recompute_scale_factor=False)
-
-            # Run forward pass
-            output = self.forward(images,head="detection")
-            
-            if self.device != 'cpu':
-                output = output.cpu()
-            
-            precision, recall = accuracy(output, downsampled_target)
-            
-            avg_recall += recall
-            avg_precision += precision
-                         
-        return avg_recall / batch_idx, avg_precision / batch_idx
+        return
     
     def training_step_segmentation(self,batch):
         # Unpack batch
         images, targets = batch
         
-        # Downsample targets using nearest neighbour method
-        downsampled_target = torch.nn.functional.interpolate(targets,
-                                                             scale_factor=0.25,
-                                                             mode="nearest",
-                                                             recompute_scale_factor=False)
+        downsampled_target = downsample(targets)
         downsampled_target = torch.squeeze(downsampled_target,dim=1) #(batch_size,1,H,W) -> (batch_size,H,W)
         downsampled_target = downsampled_target.type(torch.LongTensor) # convert the target from float to int
         downsampled_target = to_device(downsampled_target,self.device)
@@ -284,12 +276,12 @@ class Model(torch.nn.Module):
         softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
         softmax_output = softmax(output)
 
-        # Compute losse
-        nll_loss = torch.nn.NLLLoss()
+        # Compute loss
+        nll_loss = self.nll_loss(softmax_output, downsampled_target)
+        #ttvar_loss =  total_variation(output, 0.0001, [0,1])
         #total_loss = nll_loss(softmax_output, downsampled_target) + total_variation_channel(output,0) + total_variation_channel(output,1)
-        total_loss = nll_loss(softmax_output, downsampled_target) + total_variation(output, [0,1])
 
-        return total_loss
+        return nll_loss
 
     def validation_segmentation(self,dataloader):
         correct = 0
@@ -374,7 +366,6 @@ class Model(torch.nn.Module):
             #tn_field = (np.logical_and(np.logical_not(pred_field),np.logical_not(field_mask))).sum().item()# Just as a sanity check
             #print(tn_field+fn_field+tp_field+fp_field)
             #print(iou_field)
-    
            
         accuracy = {}    
         accuracy['Total'] = 100 * (correct / total)
@@ -387,6 +378,4 @@ class Model(torch.nn.Module):
         iou['Background'] = tp_background / (tp_background+fp_background+fn_background)
         iou['Total'] = (iou['Field'] + iou['Lines'] +iou['Background'])/3
         
-             
-        return accuracy,iou
-
+        return accuracy, iou
