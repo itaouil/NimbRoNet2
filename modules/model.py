@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torchvision.models as models
-from helpers import total_variation, to_device, downsample
+from helpers import total_variation, to_device, downsample, mse_loss
 
 
 class LocationAware1X1Conv2d(torch.nn.Conv2d):
@@ -252,10 +252,10 @@ class Model(torch.nn.Module):
         output = self.forward(images, head="detection")
         
         # Compute MSE and total variation losses
-        mse_loss = self.mse_loss(output, downsampled_target)
+        # mse_loss = self.mse_loss(output, downsampled_target)
         #ttvar_loss = total_variation(output, 0.0001, [0,1,2])
         
-        return mse_loss
+        return mse_loss(output, downsampled_target)
     
     def validation_detection(self,dataloader):
         return

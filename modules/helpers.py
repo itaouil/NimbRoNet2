@@ -205,11 +205,11 @@ def total_variation(img, weight, channels:list):
     return weight * total_sum/(bs_img*len(channels)*h_img*w_img)
 
 
-def mse_loss_fn(y, y_hat):
+def mse_loss(prediction, target):
     """
         MSE loss
     """
-    return ((y - y_hat)**2).sum()/y.shape[0]
+    return ((prediction - target)**2).sum()/prediction.shape[0]
 
 
 def to_device(data, device):
