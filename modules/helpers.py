@@ -46,6 +46,10 @@ LABEL_TO_CHANNEL_DETECTION = {
     "goalpost": 2
 }
 
+# Error tolerance for each class
+# (Ball, Robot, Goalpost)
+PIXEL_TOLERANCE = [10,10,10]
+
 #############################
 #      Pre-processing       #
 #############################
@@ -390,13 +394,6 @@ def detection_metric(model, loader):
     fn = [0,0,0]
     tn = [0,0,0]
     
-    # Error tolerance for each class
-    # (Ball, Robot, Goalpost)
-    pixel_tolerance = [9,16,12]
-    
-    # Threshhold used in calculating centers of the detections
-    threshhold = [0.8, 0.9, 0.88]
-    
     print(f"The loader has a length of {len(loader)}")
     
     for image, target in loader:
@@ -436,46 +433,77 @@ def detection_metric(model, loader):
             
             #print(f"Label {label}. Target centroids: {true_centroids}. Predicted centroids: {pred_centroids}")
             
-            # saving the predicited labels
             pred_annotations[label] = pred_centroids
             
-            # predictions and true labels are both absent
+            # calculate TN
             if len(pred_centroids) == len(true_centroids) and len(pred_centroids) == 0:
                 tn[channel] += 1
             
-            # assuming every prediction as false positive (decreased later upon correct matching)
-            fp[channel] += len(pred_centroids)
-            
+            # calculate TP,FP,FN
+            total = len(pred_centroids)
+            correct = 0
             for t_ct in true_centroids:
                 found = False
-                for p_ct in pred_centroids:
-                    
-                    # FP and TP update
-                    if within_tolerance(t_ct, p_ct, pixel_tolerance[channel]):
+                for p_ct in pred_centroids: 
+                    if within_tolerance(t_ct, p_ct, PIXEL_TOLERANCE[channel]):
                         found = True
                         tp[channel] += 1
-                        fp[channel] -= 1
+                        correct += 1
                         break
                
                 if not found:
                     fn[channel] += 1
-                        
+            
+            fp[channel] += total - correct
     print(tp)
     print(fp)
     print(fn)
     print(tn)
             
+    total_f1 = 0
+    total_accuracy = 0
+    total_recall = 0
+    total_precision = 0
+    total_fdr = 0
+    
     for channel,label in CHANNEL_TO_LABEL_DETECTION.items():
     
-        recall = tp[channel]/(tp[channel] + fn[channel])  # Recall
+        if tp[channel] + fn[channel] == 0:
+            recall = 0  
+        else:
+            recall = tp[channel]/(tp[channel] + fn[channel])  
+        total_recall += recall
         print(f'{label}    \tRecall:{recall:.3f}')
         
-        precision = tp[channel]/(tp[channel] + fp[channel]) # Precision
+        if tp[channel] + fp[channel] == 0:
+            precision = 0
+        else:
+            precision = tp[channel]/(tp[channel] + fp[channel]) 
+        total_precision += precision
         print(f'\t\tPrecision:{precision:.3f}')
         
-        accuracy = (tp[channel] + tn[channel])/(tp[channel] + fp[channel] + tn[channel] + fn[channel]) # Accuracy
+        if (tp[channel] + fp[channel] + tn[channel] + fn[channel]) ==0:
+            accuracy = 0 
+        else:
+            accuracy = (tp[channel] + tn[channel])/(tp[channel] + fp[channel] + tn[channel] + fn[channel]) # Accuracy
+        total_accuracy += accuracy
         print(f'\t\tAccuracy: {accuracy:.3f}')
         
-        print(f'\t\tF1 Score:{2*precision*recall/(precision+recall):.3f}') # F1 score
+        if (precision+recall) ==0:
+            f1=0
+        else:
+            f1=2*precision*recall/(precision+recall)
+        total_f1 += f1
+        print(f'\t\tF1 Score:{f1:.3f}') 
         
-        print(f'\t\tFDR:{1-precision:.3f}')   # False Detection Rate
+        fdr = 1-precision
+        total_fdr += fdr
+        print(f'\t\tFDR:{fdr:.3f}')
+        
+    total_f1 /= 3
+    total_accuracy /= 3
+    total_recall /= 3
+    total_precision /= 3
+    total_fdr /= 3
+    
+    return total_f1,total_accuracy,total_recall,total_precision,total_fdr

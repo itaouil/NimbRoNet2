@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torchvision.models as models
-from helpers import total_variation, to_device, downsample, mse_loss
+from helpers import total_variation, to_device, downsample, mse_loss, detection_metric
 
 
 class LocationAware1X1Conv2d(torch.nn.Conv2d):
@@ -205,6 +205,10 @@ class Model(torch.nn.Module):
         
         # Segmentation loss
         self.nll_loss = torch.nn.NLLLoss()
+        
+        # Cross-Entropy loss
+        self.weights = torch.tensor([0.4, 0.7, 0.9])
+        self.ce_loss = torch.nn.CrossEntropyLoss(weight=self.weights)
     
     def freeze_encoder(self):
         """
@@ -256,9 +260,11 @@ class Model(torch.nn.Module):
         #ttvar_loss = total_variation(output, 0.0001, [0,1,2])
         
         return mse_loss(output, downsampled_target)
+        #return self.mse_loss(output, downsampled_target)
     
     def validation_detection(self,dataloader):
-        return
+        total_f1, total_accuracy, total_recall, total_precision,total_fdr = detection_metric(self,dataloader)
+        return total_f1,total_accuracy,total_recall,total_precision,total_fdr
     
     def training_step_segmentation(self,batch):
         # Unpack batch
@@ -273,15 +279,16 @@ class Model(torch.nn.Module):
         output = self.forward(images,head="segmentation")
         
         # Compute output
-        softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
-        softmax_output = softmax(output)
+        #softmax = torch.nn.LogSoftmax(dim=1) # wait for hafez reply if it is needed or not
+        #softmax_output = softmax(output)
 
         # Compute loss
-        nll_loss = self.nll_loss(softmax_output, downsampled_target)
+        ce_loss = self.ce_loss(output, downsampled_target)
+        #nll_loss = self.nll_loss(softmax_output, downsampled_target)
         #ttvar_loss =  total_variation(output, 0.0001, [0,1])
         #total_loss = nll_loss(softmax_output, downsampled_target) + total_variation_channel(output,0) + total_variation_channel(output,1)
 
-        return nll_loss
+        return ce_loss
 
     def validation_segmentation(self,dataloader):
         correct = 0
