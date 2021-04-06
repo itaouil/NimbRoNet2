@@ -46,7 +46,7 @@ class DetectionDataset(Dataset):
         # Labels data
         self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
         self.label_variance = {'ball': 5, 'robot':10, 'goalpost': 5}
-        self.label_radius = {'ball': 40, 'robot': 80, 'goalpost': 40}
+        self.label_radius = {'ball': 10, 'robot': 20, 'goalpost': 10}
     
     def set_resolution(self, h:int, w:int):
         """
@@ -92,13 +92,13 @@ class DetectionDataset(Dataset):
             ymax = ((ymax * height) // original_height)
                         
             # Radius and center of the object
-            #radius = self.label_radius[labels[idx]]
-            radius = max(int(ymax-ymin)/2, int((xmax-xmin)/2)) * self.label_variance[labels[idx]]
+            radius = self.label_radius[labels[idx]]
+            #radius = max(int(ymax-ymin)/2, int((xmax-xmin)/2)) * self.label_variance[labels[idx]]
             center = np.array([int(ymin + (ymax-ymin)/2), int(xmin + (xmax-xmin)/2)])            
             
             # Increase robot radius
-            if labels[idx] == "robot":
-                radius += int(0.1 * radius)
+            #if labels[idx] == "robot":
+            #    radius += int(0.1 * radius)
                 
             # Distribution
             idxs = np.meshgrid(np.arange(0, height), np.arange(0, width))
