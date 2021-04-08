@@ -46,7 +46,7 @@ class DetectionDataset(Dataset):
         # Labels data
         self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
         self.label_variance = {'ball': 5, 'robot':10, 'goalpost': 5}
-        self.label_radius = {'ball': 10, 'robot': 20, 'goalpost': 10}
+        self.label_radius = {'ball': 120, 'robot': 200, 'goalpost': 120}
     
     def set_resolution(self, h:int, w:int):
         """
