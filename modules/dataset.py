@@ -45,7 +45,6 @@ class DetectionDataset(Dataset):
         
         # Labels data
         self.label_map = {"ball": 0, "robot": 1, "goalpost": 2}
-        self.label_variance = {'ball': 5, 'robot':10, 'goalpost': 5}
         self.label_radius = {'ball': 120, 'robot': 200, 'goalpost': 120}
     
     def set_resolution(self, h:int, w:int):
@@ -78,11 +77,11 @@ class DetectionDataset(Dataset):
                 
         # Populate probability map
         for idx, coordinates in enumerate(boxes):
-            xmin, xmax = coordinates[0]-1, coordinates[2]-1
-            ymin, ymax = coordinates[1]-1, coordinates[3]-1
+            xmin, xmax = coordinates[0], coordinates[2]
+            ymin, ymax = coordinates[1], coordinates[3]
             
             # Invalid object
-            if xmin==xmax==ymin==ymax==-2:
+            if xmin==xmax==ymin==ymax==-1:
                 continue
                                     
             # Transform coordinate to new resolution
@@ -93,12 +92,12 @@ class DetectionDataset(Dataset):
                         
             # Radius and center of the object
             radius = self.label_radius[labels[idx]]
-            #radius = max(int(ymax-ymin)/2, int((xmax-xmin)/2)) * self.label_variance[labels[idx]]
-            center = np.array([int(ymin + (ymax-ymin)/2), int(xmin + (xmax-xmin)/2)])            
             
-            # Increase robot radius
-            #if labels[idx] == "robot":
-            #    radius += int(0.1 * radius)
+            if labels[idx]=="robot" or labels[idx]=="goalpost":
+                center = np.array([int(ymin + (ymax-ymin)/2), int(xmin + (xmax-xmin)/2)])
+            
+            if labels[idx]=="ball":
+                center = np.array([ymin + (ymax-ymin)/2, xmin + (xmax-xmin)/2])            
                 
             # Distribution
             idxs = np.meshgrid(np.arange(0, height), np.arange(0, width))

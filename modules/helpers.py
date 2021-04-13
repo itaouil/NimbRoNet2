@@ -1,4 +1,3 @@
-# Imports
 import cv2
 import PIL
 import torch
@@ -27,7 +26,11 @@ MASK_MAPPING_RGB = {
     (0, 0, 0): 0,  # background
     (128, 128, 0): 1,  # field
     (0, 128, 0): 2,  # lines
-    #(128, 0, 0): 1,  # ball as a field
+}
+INVERSE_MASK_MAPPING_RGB = {
+    0: (0, 0, 0),  # background
+    1: (128, 128, 128),  # field
+    2: (255, 255, 255),  # lines 
 }
 MASK_MAPPING_LABEL = {
     (0,0,0): 0,  # background
@@ -123,10 +126,9 @@ def convert_label_to_image(label) -> np.array:
         RGB equivalent using the MASK_MAPPING dict
     """
     out = (np.zeros((label.shape[0], label.shape[1], 3)))
-    inverse_mask = {value: key for key, value in MASK_MAPPING_RGB.items()}
 
-    for k in inverse_mask:
-        out[(label == k)] = inverse_mask[k]
+    for k in INVERSE_MASK_MAPPING_RGB:
+        out[(label == k)] = INVERSE_MASK_MAPPING_RGB[k]
 
     return out
 
@@ -203,8 +205,8 @@ def total_variation(img, weight, channels:list):
     bs_img, _, h_img, w_img = img.size()    
     
     for channel in channels:
-        total_sum += torch.pow(img[:,channel,1:,:]-img[:,:,:-1,:], 2).sum()
-        total_sum += torch.pow(img[:,channel,:,1:]-img[:,:,:,:-1], 2).sum()
+        total_sum += torch.pow(img[:,channel,1:,:]-img[:,channel,:-1,:], 2).sum()
+        total_sum += torch.pow(img[:,channel,:,1:]-img[:,channel,:,:-1], 2).sum()
         
     return weight * total_sum/(bs_img*len(channels)*h_img*w_img)
 
@@ -266,9 +268,9 @@ def show_labeled_image(image: torch.tensor or np.array, boxes: torch.tensor, lab
     plt.show()
     
     
-def show_image_and_probmap(image: torch.tensor or np.array, probmap):
+def show_image_and_probmap(image: torch.tensor or np.array, probmap: torch.tensor):
     """
-        Show the image along with its segmentation.
+        Show the image along with its predictions.
     """
     fig, ax = plt.subplots(1, 2)
 
@@ -281,9 +283,9 @@ def show_image_and_probmap(image: torch.tensor or np.array, probmap):
 
     plt.show()
     
-def show_image_and_probmap2(image, target, predicted):
+def show_image_target_and_probmap(image:torch.tensor or np.array, target:torch.tensor, predicted:torch.tensor):
     """
-        Show the image along with its segmentation.
+        Show the image along with its targets and predictions.
     """
     fig, ax = plt.subplots(1, 3)
     fig.tight_layout()
@@ -316,8 +318,27 @@ def show_image_and_seg(image: torch.tensor or np.array, labels: np.array):
     ax[1].imshow(convert_label_to_image(labels[:,:,0]).astype(np.uint8))
 
     plt.show()
-
     
+def show_image_target_and_seg(image: torch.tensor or np.array, target:torch.tensor, predicted:torch.tensor):
+    """
+        Show the image along with its segmentation.
+    """
+    fig, ax = plt.subplots(1, 3)
+
+    if isinstance(image, torch.Tensor):
+        image = reverse_normalize(image)
+        image = image.numpy().transpose((1, 2, 0))
+        
+    target = target.numpy().transpose((1, 2, 0))
+    predicted = predicted.numpy().transpose((1, 2, 0))
+        
+    ax[0].imshow(image)
+    ax[1].imshow(convert_label_to_image(target[:,:,0]).astype(np.uint8))
+    ax[2].imshow(convert_label_to_image(predicted[:,:,0]).astype(np.uint8))
+
+    plt.show()
+  
+
 #############################
 #      Post-processing      #
 #############################
@@ -330,7 +351,7 @@ def squared_distance(p1, p2):
 
 def merge_centroids(points, d=20):
     """
-        Nearby centroids fusion
+        Fuse nearby centroids
     """
     ret = []
     d2 = d * d
@@ -355,7 +376,7 @@ def merge_centroids(points, d=20):
 
 def get_predicted_centers(img):
     """
-        Compute local-maxima the probability map
+        Compute the local-maxima of the probability map
     """
     points = []
     ret,thresh = cv2.threshold(img,127,255, cv2.THRESH_BINARY)
@@ -374,8 +395,6 @@ def get_predicted_centers(img):
         points.append((centroid_y,centroid_x))
     
     return merge_centroids(points)
-    #return points
-
 
 def within_tolerance(target, prediction, tolerance):
     """
@@ -384,6 +403,10 @@ def within_tolerance(target, prediction, tolerance):
     """
     return abs(target[0]-prediction[0]) <= tolerance and abs(target[1]-prediction[1]) <= tolerance
 
+    
+#############################
+#    Evaluation Metric      #
+#############################
 def detection_metric(model, loader):
     """
         Detection metric
@@ -394,19 +417,12 @@ def detection_metric(model, loader):
     fn = [0,0,0]
     tn = [0,0,0]
     
-    print(f"The loader has a length of {len(loader)}")
-    
     for image, target in loader:
         # Target and output
         downsampled_target = downsample(target)
-        output = model(image.cuda(), head="detection")
-        
+        _,output = model(image.cuda())
         
         pred_annotations = {'goalpost':[],'ball':[],'robot':[]}
-        
-        # Visualize ouput and image
-        #show_image_and_probmap(image[0], downsampled_target[0])
-        #show_image_and_probmap(image[0], output.cpu()[0].detach())
         
         for label, channel in LABEL_TO_CHANNEL_DETECTION.items():
             old_fn = fn[channel]
@@ -423,15 +439,6 @@ def detection_metric(model, loader):
             predicted_channel = np.where(predicted_channel < 0.5, 0, predicted_channel) * 255
             predicted_channel = predicted_channel.astype(np.uint8)
             pred_centroids = get_predicted_centers(predicted_channel)
-            
-            #fig, ax = plt.subplots(1, 2)
-        
-            #ax[0].imshow(target_channel)
-            #ax[1].imshow(predicted_channel)
-
-            #plt.show()
-            
-            #print(f"Label {label}. Target centroids: {true_centroids}. Predicted centroids: {pred_centroids}")
             
             pred_annotations[label] = pred_centroids
             
@@ -455,10 +462,6 @@ def detection_metric(model, loader):
                     fn[channel] += 1
             
             fp[channel] += total - correct
-    print(tp)
-    print(fp)
-    print(fn)
-    print(tn)
             
     total_f1 = 0
     total_accuracy = 0
@@ -485,7 +488,7 @@ def detection_metric(model, loader):
         if (tp[channel] + fp[channel] + tn[channel] + fn[channel]) ==0:
             accuracy = 0 
         else:
-            accuracy = (tp[channel] + tn[channel])/(tp[channel] + fp[channel] + tn[channel] + fn[channel]) # Accuracy
+            accuracy = (tp[channel] + tn[channel])/(tp[channel] + fp[channel] + tn[channel] + fn[channel])
         total_accuracy += accuracy
         print(f'\t\tAccuracy: {accuracy:.3f}')
         
@@ -507,3 +510,86 @@ def detection_metric(model, loader):
     total_fdr /= 3
     
     return total_f1,total_accuracy,total_recall,total_precision,total_fdr
+
+def segmentation_metric(model, dataloader):
+    """
+        Segmentation metric
+    """
+    
+    total = correct = 0
+    correct_field = total_field = 0
+    correct_lines = total_lines = 0
+    correct_background = total_background = 0
+    tp_field = pred_field = fp_field = fn_field = 0
+    tp_lines= pred_lines = fp_lines = fn_lines = 0
+    tp_background = pred_background = fp_background = fn_background = 0
+
+    for batch_idx,batch in enumerate(dataloader):
+        # Unpack batch
+        images, targets = batch
+        images = images.cuda()
+
+        # Downsample targets using nearest neighbour method
+        downsampled_target = torch.nn.functional.interpolate(targets,
+                                                             scale_factor=0.25,
+                                                             mode="nearest",
+                                                             recompute_scale_factor=False)
+        downsampled_target = torch.squeeze(downsampled_target,dim=1) #(batch_size,1,H,W) -> (batch_size,H,W)
+        downsampled_target = downsampled_target.type(torch.LongTensor) # convert the target from float to int
+
+        # Run forward pass
+        output, _ = model(images)
+
+        # Get predictions from the maximum value
+        _, predicted = torch.max(output, 1)
+
+        
+        predicted = predicted.cpu()
+
+        # Total correct predictions
+        correct_predictions = (predicted == downsampled_target)
+        correct += correct_predictions.sum().item()
+        field_mask = downsampled_target.cpu()==1
+        correct_field += (np.logical_and(correct_predictions,field_mask)).sum().item()
+        lines_mask = downsampled_target.cpu()==2
+        correct_lines +=(np.logical_and(correct_predictions,lines_mask)).sum().item()
+        background_mask = downsampled_target.cpu()==0
+        correct_background +=(np.logical_and(correct_predictions,background_mask)).sum().item()
+
+        # Total number of labels
+        total += (downsampled_target.size(0)*downsampled_target.size(1)*downsampled_target.size(2))
+        total_field += field_mask.sum().item()
+        total_lines += lines_mask.sum().item()
+        total_background += background_mask.sum().item()
+
+        # Calculate TP, FP, FN
+        tp_field += (np.logical_and(correct_predictions,field_mask)).sum().item()
+        pred_field = predicted.cpu() == 1
+        fp_field += (np.logical_and(pred_field ,np.logical_not(field_mask))).sum().item()
+        fn_field += (np.logical_and(np.logical_not(np.logical_and(correct_predictions,field_mask)),field_mask)).sum().item()
+
+        tp_lines += (np.logical_and(correct_predictions,lines_mask)).sum().item()
+        pred_lines = predicted.cpu() == 2
+        fp_lines += (np.logical_and(pred_lines ,np.logical_not(lines_mask))).sum().item()
+        fn_lines += (np.logical_and(np.logical_not(np.logical_and(correct_predictions,lines_mask)),lines_mask)).sum().item()
+
+        tp_background += (np.logical_and(correct_predictions,background_mask)).sum().item()
+        pred_background = predicted.cpu() == 0
+        fp_background += (np.logical_and(pred_background ,np.logical_not(background_mask))).sum().item()
+        fn_background += (np.logical_and(np.logical_not(np.logical_and(correct_predictions,background_mask)),background_mask)).sum().item()
+
+    accuracy = {}    
+    accuracy['Field'] = 100 * (correct_field / total_field)
+    accuracy['Lines'] = 100 * (correct_lines / total_lines)
+    accuracy['Background'] = 100 * (correct_background / total_background)
+    accuracy['Total'] = 100 * (correct / total)
+    iou = {}
+    iou['Field'] = tp_field / (tp_field+fp_field+fn_field)
+    iou['Lines'] = tp_lines / (tp_lines+fp_lines+fn_lines)
+    iou['Background'] = tp_background / (tp_background+fp_background+fn_background)
+    iou['Total'] = (iou['Field'] + iou['Lines'] +iou['Background'])/3
+    
+    print("Accuracy",accuracy)
+    print("IOU",iou)
+    
+    return accuracy, iou
